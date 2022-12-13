@@ -1,0 +1,4257 @@
+
+<!doctype html>
+ <!-- Note that chrome://flags is intentionally not a translated UI surface, -->
+ <!-- so don't mark it with direction or language attributes. -->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="chrome://resources/css/text_defaults_md.css">
+
+<title>Experiments</title>
+
+<link rel="stylesheet" href="flags.css">
+
+
+
+
+</head>
+<body>
+<div id="header">
+  <div class="flex-container">
+    <div class="flex">
+      <div class="search-container">
+        <input type="text" id="search"
+               aria-label="Search flags"
+               placeholder="Search flags" tabindex="1"
+               autocomplete="off" spellcheck="false">
+        <input type="button" class="clear-search" title="Clear search"
+            tabindex="2">
+      </div>
+    </div>
+    <div class="flex">
+      <button id="experiment-reset-all" type="button" tabindex="3">
+          Reset all
+      </button>
+    </div>
+  </div>
+  <div class="screen-reader-only" id="screen-reader-status-message" role="status"></div>
+</div>
+<div id="body-container" style="visibility:hidden">
+  <div id="flagsTemplate">
+
+
+    <div class="flex-container">
+      <div class="flex"><h1 class="section-header-title">Experiments</h1></div>
+      <span id="version" class="flex">107.0.5304.105</span>
+    </div>
+    <div class="blurb-container">
+      <span class="blurb-warning">Warning: Experimental features ahead!</span>
+      <span>By enabling these features, you could lose browser data or
+    compromise your security or privacy. Enabled features apply to all
+    users of this browser. If you are an enterprise admin you should
+    not be using these flags in production.</span>
+
+    </div>
+    <p id="promos" hidden>
+      <!-- Those strings are not localized because they only appear in
+           chrome://flags, which is not localized. -->
+      <span id="channel-promo-beta" hidden>
+        Interested in cool new Chrome features? Try our
+        <a href="https://chrome.com/beta">beta channel</a>.
+      </span>
+      <span id="channel-promo-dev" hidden>
+        Interested in cool new Chrome features? Try our
+        <a href="https://chrome.com/dev">dev channel</a>
+      </span>
+    </p>
+    <ul class="tabs" role="tablist">
+      <li class="selected" role="tab">
+        <a href="#tab-content-available" id="tab-available" class="tab" role="tab"
+            aria-selected="true"
+            aria-controls="panel1"
+            tabindex="5">Available</a>
+      </li>
+<!-- Unsupported experiments are not shown on iOS -->
+
+      <li role="tab">
+        <a href="#tab-content-unavailable" id="tab-unavailable" class="tab" role="tab"
+           aria-selected="false" aria-controls="panel2"
+           tabindex="6">Unavailable</a>
+      </li>
+
+    </ul>
+    <div id="tabpanels">
+      <div id="tab-content-available" class="tab-content selected"
+          role="tabpanel" aria-labelledby="tab-available" aria-hidden="false">
+      </div>
+      <div id="tab-content-available-template" class="template hidden">
+        <!-- Non default experiments. -->
+        <div jsselect="supportedFeatures"
+            jsvalues="id:internal_name; class: is_default ? 'hidden' : 'experiment'"
+            jsdisplay="!is_default">
+          <div class="experiment-default"
+              jsvalues="class: is_default ? 'experiment-default flex-container'
+                  : 'experiment-switched flex-container'">
+            <div class="flex">
+              <h3 class="experiment-name" jscontent="name"
+                  jsvalues="title: is_default ? '' : 'Experiment enabled';
+                      id:internal_name + '_name'"></h3>
+              <p>
+                <span jsvalues=".textContent:description"></span> â€“
+                <span class="platforms" jscontent="supported_platforms.join(', ')"></span>
+              </p>
+              <div jsdisplay="origin_list_value!==null">
+                <textarea class="experiment-origin-list-value"
+                    jsvalues=".internal_name:internal_name; .value:origin_list_value;
+                        aria-labelledby:internal_name + '_name'"
+                    tabindex="7"></textarea>
+              </div>
+              <a class="permalink" jsvalues="href: '#' + internal_name"
+                  jscontent="'#' + internal_name" tabindex="7"></a>
+            </div>
+            <div class="flex experiment-actions">
+              <div jsdisplay="options && options.length > 0">
+                <select class="experiment-select" tabindex="7"
+                    jsvalues=".internal_name:internal_name;.disabled:!enabled;
+                        aria-labelledby:internal_name + '_name'">
+                  <option jsvalues=".selected:selected;"
+                      jsselect="options"
+                      jscontent="description">
+                  </option>
+                </select>
+              </div>
+              <select class="experiment-enable-disable" tabindex="7"
+                  jsdisplay="enabled !== undefined"
+                  jsvalues=".internal_name:internal_name;
+                      aria-labelledby:internal_name + '_name'">
+                <option jsvalues=".selected:!enabled; data-default: enabled ? 1 : 0"
+                    value="disabled">Disabled</option>
+                <option jsvalues=".selected:enabled; data-default: !enabled ? 1 : 0"
+                    value="enabled">Enabled</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <!-- Experiments with default settings. -->
+        <div class="experiment" jsselect="supportedFeatures"
+            jsvalues="id:internal_name; class: is_default ? 'experiment' : 'hidden'"
+            jsdisplay="is_default">
+          <div class="experiment-default"
+              jsvalues="class: is_default ? 'experiment-default flex-container'
+                  : 'experiment-switched flex-container'">
+            <div class="flex">
+              <h3 class="experiment-name" jscontent="name"
+                  jsvalues="title: is_default ? '' : 'Experiment enabled';
+                      id:internal_name + '_name'"></h3>
+              <p>
+                <span jsvalues=".textContent:description"></span> â€“
+                <span class="platforms" jscontent="supported_platforms.join(', ')"></span>
+              </p>
+              <div jsdisplay="origin_list_value!==null">
+                <textarea class="experiment-origin-list-value"
+                    jsvalues=".internal_name:internal_name; .value:origin_list_value;
+                        aria-labelledby:internal_name + '_name'"
+                    tabindex="7"></textarea>
+              </div>
+              <a class="permalink" jsvalues="href: '#' + internal_name"
+                  jscontent="'#' + internal_name" tabindex="7"></a>
+            </div>
+            <div class="flex experiment-actions">
+              <div jsdisplay="options && options.length > 0">
+                <select class="experiment-select" tabindex="7"
+                    jsvalues=".internal_name:internal_name;.disabled:!enabled;
+                        aria-labelledby:internal_name + '_name'">
+                  <option jsvalues=".selected:selected;"
+                      jsselect="options"
+                      jscontent="description">
+                  </option>
+                </select>
+              </div>
+              <!-- Represent enabled / disabled options in a drop down -->
+              <select class="experiment-enable-disable" tabindex="7"
+                  jsdisplay="enabled !== undefined"
+                  jsvalues=".internal_name:internal_name;
+                      aria-labelledby:internal_name + '_name'">
+                <option jsvalues=".selected:!enabled; data-default:!enabled ? 1 : 0"
+                    value="disabled">Disabled</option>
+                <option jsvalues=".selected:enabled; data-default: enabled ? 1 : 0"
+                    value="enabled">Enabled</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="no-match hidden" role="alert">No matching experiments</div>
+      </div>
+
+      <div id="tab-content-unavailable" class="tab-content"
+          role="tabpanel" aria-labelledby="tab-unavailable" aria-hidden="false">
+        <div class="experiment"
+            jsselect="unsupportedFeatures"
+            jsvalues="id:internal_name">
+          <div class="experiment-default flex-container"
+              jsvalues="class: is_default ? 'experiment-default flex-container'
+                  : 'experiment-switched flex-container'">
+            <div class="flex">
+              <h3 class="experiment-name"
+                  jscontent="name"></h3>
+              <p>
+                <span jsvalues=".textContent:description"></span>
+                <span class="platforms" jscontent="supported_platforms.join(', ')"></span>
+              </p>
+              <a class="permalink"
+                  jsvalues="href: '#' + internal_name"
+                  jscontent="'#' + internal_name" tabindex="9"></a>
+            </div>
+            <div class="flex experiment-actions">Not available on your platform.</div>
+          </div>
+        </div>
+        <div class="no-match hidden" role="alert">
+          No matching experiments
+        </div>
+      </div>
+
+    </div>
+    <div id="needs-restart" jsvalues="class:needsRestart ? 'show' : ''">
+      <div class="flex-container">
+        <div class="flex restart-notice" jstcache="0">Your changes will take effect the next time you relaunch Chrome.</div>
+        <div class="flex">
+
+          <button id="experiment-restart-button" class="primary" tabindex="-1">
+            Relaunch
+          </button>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script type="module" src="flags.js"></script>
+</body>
+</html>
+
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+
+<meta name="viewport" content="width=device-width">
+
+<script type="module" src="net_export.js"></script>
+<link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
+<link rel="stylesheet" href="net_export.css">
+<link rel="icon" id="fav-icon">
+<title>Network Log Export</title>
+</head>
+<body>
+  <div id="main-container">
+    <!--
+      =========================================================================
+      View for "unitialized" state.
+       * Only visible briefly, if at all
+      =========================================================================
+    -->
+    <div id="state-uninitialized">
+      <h2>Network Log Export</h2>
+      Loading...
+    </div>
+
+    <!--
+      =========================================================================
+      View for "initial" state.
+       * Has controls to start logging.
+      =========================================================================
+    -->
+    <div id="state-initial" hidden>
+      <h2>Capture Network Log</h2>
+      <button id="start-logging">Start Logging to Disk</button>
+
+      <div class="section-container">
+        Click the button to start logging future network activity to a file on
+        disk.
+        
+        The log includes details of network activity from all of Chrome,
+        including incognito and non-incognito tabs, visited URLs, and
+        information about the network configuration.
+        
+        
+        <a href="https://dev.chromium.org/for-testers/providing-network-details"
+           target="_blank">
+        See the Chromium website for more detailed instructions</a>.
+      </div>
+
+      <div class="outline-box">
+        <b>OPTIONS</b>:
+        <span class="warning">This section should normally be left alone.</span>
+        <div class="radio-button-div">
+          <label>
+            <input id="strip-private-data-button" type="radio"
+                   name="log-mode" value="STRIP_PRIVATE_DATA" checked>
+            Strip private information
+          </label>
+        </div>
+        <div class="radio-button-div">
+          <label>
+            <input id="include-private-data-button" type="radio"
+                   name="log-mode" value="NORMAL">
+            Include cookies and credentials
+          </label>
+        </div>
+        <div class="radio-button-div">
+          <label>
+            <input id="log-bytes-button" type="radio"
+                   name="log-mode" value="LOG_BYTES">
+            Include raw bytes (will include cookies and credentials)
+          </label>
+        </div>
+        <div>
+          <label>
+            Maximum log size (megabytes):
+            <input id="log-max-filesize" type="number" min="0" step="5" />
+            (Blank means unlimited)
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!--
+      =========================================================================
+      View for "logging" state.
+       * Shows that logging is in progress
+       * Has controls to stop logging
+      =========================================================================
+    -->
+    <div id="state-logging" hidden>
+      <h2>Saving network events to disk...</h2>
+
+      <button id="stop-logging">Stop Logging</button>
+
+      <div class="section-container">
+        <p>Reproduce the network problem now using another tab. When you are
+        done, return to this page and click the Stop button.</p>
+
+        <p>All of your browser's networking activity will be written to the log
+        file until you either click the Stop button, or close this tab.</p>
+      </div>
+
+      <div class="outline-box">
+        <b>FILE:</b> <span id="file-path-logging"></span> <br/>
+        <b>OPTIONS:</b> <span id="capture-mode-logging"></span>
+      </div>
+    </div>
+
+    <!--
+      =========================================================================
+      View for "stopped" state.
+       * Shows where the log file was saved to
+       * Has controls to email the log (mobile)
+      =========================================================================
+    -->
+    <div id="state-stopped" hidden>
+      <h2>Log file written</h2>
+
+      
+      <button id="mobile-email">Email Log</button>
+      
+
+      
+
+      <button id="startover">
+        Start Over
+      </button>
+
+      <div class="section-container">
+        
+        Share the log by emailing it, and you are done!
+        
+
+        
+      </div>
+
+      <!-- TODO(eroman): This is duplicated with the logging state -->
+      <div class="outline-box">
+        <b>FILE:</b> <span id="file-path-stopped"></span> <br/>
+        <b>OPTIONS:</b> <span id="capture-mode-stopped"></span>
+      </div>
+
+      <div class="section-container">
+        The log file can be loaded using the
+        <a href="https://netlog-viewer.appspot.com/"
+           target="_blank">netlog_viewer</a>.
+      </div>
+
+      <div class="section-container">
+        <b><span class="warning">PRIVACY</span></b>: Be aware when
+        sharing your network logs that they may contain private information. At
+        a minimum, they list the URLs and hostnames of sites visited while
+        logging was enabled.
+        <a href="#" id="privacy-read-more-link">Read more...</a>
+
+        <div id="privacy-read-more">
+          <ul>
+            <li>There may be some cached hostnames/URLs from sites visited prior
+              to enabling logging.</li>
+            <li>Logs may contain information about your networking environment,
+              such as the proxy configuration used.</li>
+            <li>The default logging options do a <i>best-effort</i> stripping of
+              any cookies/credentials in the logged requests.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html><!doctype html>
+<html dir="ltr" lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, user-scalable=no">
+<title>ChĂ­nh sĂ¡ch</title>
+
+<link rel="stylesheet" href="./policy.css">
+<link rel="stylesheet" href="chrome://resources/css/text_defaults_md.css">
+
+</head>
+
+<body>
+  <header>
+    <div class="header-row">
+      <h1>ChĂ­nh sĂ¡ch</h1>
+      <input id="filter" class="search-field-container" type="search"
+          placeholder="Lá»c chĂ­nh sĂ¡ch theo tĂªn"
+          aria-label="Lá»c chĂ­nh sĂ¡ch theo tĂªn" incremental>
+    </div>
+    <div class="header-row">
+      <button id="reload-policies">Táº£i láº¡i chĂ­nh sĂ¡ch</button>
+      <button id="export-policies">Xuáº¥t sang Ä‘á»‹nh dáº¡ng JSON</button>
+      <button id="copy-policies">Sao chĂ©p á»Ÿ Ä‘á»‹nh dáº¡ng JSON</button>
+      <div id="show-unset-container" class="show-unset-checkbox">
+        <label>
+          <input id="show-unset" type="checkbox">
+          <span>Hiá»ƒn thá»‹ chĂ­nh sĂ¡ch khĂ´ng cĂ³ giĂ¡ trá»‹ Ä‘Æ°á»£c Ä‘áº·t</span>
+        </label>
+      </div>
+    </div>
+    <div aria-live="polite" id="screen-reader-message"></div>
+  </header>
+  <main id="policy-ui">
+    <section id="status-section" class="status-box-section" hidden>
+      <h3>Tráº¡ng thĂ¡i</h3>
+      <div id="status-box-container"></div>
+    </section>
+    <section id="main-section" class="empty">
+      <!--  This is where policy tables get dynamically added. -->
+    </section>
+  </main>
+</body>
+
+<script type="module" src="policy.js"></script>
+</html><!doctype html>
+<html dir="ltr" lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>chrome://serviceworker-internals</title>
+  <link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
+  <link rel="stylesheet" href="chrome://resources/css/widgets.css">
+  <style>/* Copyright 2014 The Chromium Authors
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
+
+.serviceworker-summary {
+  background-color: rgb(235, 239, 249);
+  border-top: 1px solid rgb(156, 194, 239);
+  font-weight: bold;
+  margin-bottom: 6px;
+  margin-top: 12px;
+  padding: 3px;
+}
+
+.serviceworker-item {
+  margin-bottom: 15px;
+  margin-top: 6px;
+  position: relative;
+}
+
+.serviceworker-registration {
+  padding: 5px;
+}
+
+.serviceworker-scope {
+  color: rgb(85, 102, 221);
+  display: inline-block;
+  padding-bottom: 1px;
+  padding-top: 4px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.serviceworker-version {
+  padding-bottom: 3px;
+  padding-inline-start: 10px;
+}
+
+.serviceworker-client {
+  padding-bottom: 3px;
+  padding-inline-start: 10px;
+}
+
+.controls a {
+  color: #777;
+  margin-block-end: 16px;
+}
+
+.serviceworker-storage-key {
+  padding-bottom: 3px;
+  padding-inline-start: 10px;
+}
+
+.serviceworker-storage-key-wrapper {
+  color: rgb(85, 102, 221);
+  white-space: nowrap;
+}
+</style>
+</head>
+<body>
+  <!-- templates -->
+  <div style="display:none">
+    <div id="serviceworker-version-template" class="serviceworker-version">
+      <div class="serviceworker-status">
+        <span>Installation Status:</span>
+        <span jscontent="$this.status"></span>
+      </div>
+      <div class="serviceworker-running-status">
+        <span>Running Status:</span>
+        <span jscontent="$this.running_status"></span>
+      </div>
+      <div class="serviceworker-fetch-handler-existence">
+        <span>Fetch handler existence:</span>
+        <span jscontent="$this.fetch_handler_existence"></span>
+      </div>
+      <div class="serviceworker-fetch-handler-type">
+        <span>Fetch handler type:</span>
+        <span jscontent="$this.fetch_handler_type"></span>
+      </div>
+      <div class="serviceworker-script_url">
+        <span>Script:</span>
+        <span jscontent="$this.script_url"></span>
+      </div>
+      <div class="serviceworker-vid">
+        <span>Version ID:</span>
+        <span jscontent="$this.version_id"></span>
+      </div>
+      <div class="serviceworker-pid">
+        <span>Renderer process ID:</span>
+        <span jscontent="$this.process_id"></span>
+      </div>
+      <div class="serviceworker-tid">
+        <span>Renderer thread ID:</span>
+        <span jscontent="$this.thread_id"></span>
+      </div>
+      <div class="serviceworker-rid">
+        <span>DevTools agent route ID:</span>
+        <span jscontent="$this.devtools_agent_route_id"></span>
+      </div>
+      <div class="serviceworker-clients" jsselect="$this.clients">
+        <div>Client: </div>
+        <div transclude="serviceworker-client-template"></div>
+      </div>
+      <div>
+        <div>Log:</div>
+        <textarea class="serviceworker-log"
+            jsvalues=".partition_id:$partition_id;.version_id:$this.version_id"
+            rows="3" cols="120" readonly jscontent="$this.log"></textarea>
+      </div>
+      <div class="worker-controls">
+        <button href="#" class="stop"
+            jsvalues=".cmdArgs:{partition_id:$partition_id,version_id:version_id}"
+            jsdisplay="$this.running_status == 'RUNNING'">Stop</button>
+        <button href="#" class="inspect"
+            jsvalues=".cmdArgs:{process_host_id:process_host_id,devtools_agent_route_id:devtools_agent_route_id}"
+            jsdisplay="$this.running_status == 'RUNNING'">Inspect</button>
+        <span class="operation-status" style="display: none">Running...</span>
+      </div>
+    </div>
+    <div id="serviceworker-registration-template"
+        class="serviceworker-registration">
+      <div class="serviceworker-scope">
+        <span>Scope:</span>
+        <span jscontent="scope"></span>
+      </div>
+      <!-- Storage Partitioning -->
+      <div class="serviceworker-storage-key-wrapper"
+        jsdisplay="$this.third_party_storage_partitioning_enabled">
+        Storage key:
+        <div class="serviceworker-storage-key">
+          <div class="serviceworker-origin"
+            jsdisplay="$this.ancestor_chain_bit == 'CrossSite'">
+            <span>origin:</span>
+            <span jscontent="$this.origin"></span>
+          </div>
+          <div class="serviceworker-top-level-site"
+            jsdisplay="$this.ancestor_chain_bit == 'CrossSite'">
+            <span>Top level site:</span>
+            <span jscontent="$this.top_level_site"></span>
+          </div>
+          <div class="serviceworker-ancestor-chain-bit">
+            <span>Ancestor chain bit:</span>
+            <span jscontent="$this.ancestor_chain_bit"></span>
+          </div>
+          <div class="serviceworker-nonce"
+            jsdisplay="$this.ancestor_chain_bit == 'CrossSite'">
+            <span>nonce:</span>
+            <span jscontent="$this.nonce"></span>
+          </div>
+        </div>
+      </div>
+      <!-- Storage Partitioning ends -->
+      <div class="serviceworker-rid">
+        <span>Registration ID:</span>
+        <span jscontent="registration_id"></span>
+        <span jsdisplay="$this.unregistered">(unregistered)</span>
+      </div>
+      <div class="serviceworker-navigation-preload-enabled">
+        <span>Navigation preload enabled:</span>
+        <span jscontent="$this.navigation_preload_enabled"></span>
+      </div>
+      <div class="serviceworker-navigation-preload-header-length">
+        <span>Navigation preload header length:</span>
+        <span jscontent="$this.navigation_preload_header_length"></span>
+      </div>
+      <div jsselect="$this.active">
+        Active worker:
+        <div transclude="serviceworker-version-template"></div>
+      </div>
+      <div jsselect="$this.waiting">
+        Waiting worker:
+        <div transclude="serviceworker-version-template"></div>
+      </div>
+      <div class="registration-controls" jsdisplay="!$this.unregistered">
+        <button href="#" class="unregister"
+            jsvalues=".cmdArgs:{partition_id:$partition_id,scope:scope,storage_key:storage_key}">
+          Unregister
+        </button>
+        <button href="#" class="start"
+            jsdisplay="$this.active.running_status != 'RUNNING'"
+             jsvalues=".cmdArgs:{partition_id:$partition_id,scope:scope,storage_key:storage_key}">
+          Start
+        </button>
+        <span class="operation-status" style="display: none">Running...</span>
+      </div>
+    </div>
+    <div id="serviceworker-list-template"
+        jsvalues="$partition_id:$this.partition_id;.partition_id:$this.partition_id"
+        jsdisplay="$this.stored_registrations.length + $this.unregistered_registrations.length + $this.unregistered_versions.length > 0">
+      <div class="serviceworker-summary">
+        <span jsdisplay="$this.partition_path">
+          <span>Registrations in: </span>
+          <span jscontent="$this.partition_path"></span>
+        </span>
+        <span jsdisplay="!$this.partition_path">
+          <span>Registrations: Incognito </span>
+        </span>
+        <span jscontent="'(' + $this.stored_registrations.length + ')'"></span>
+      </div>
+      <div class="serviceworker-item" jsselect="$this.stored_registrations">
+        <div transclude="serviceworker-registration-template"></div>
+      </div>
+      <div class="serviceworker-item"
+          jsselect="$this.unregistered_registrations">
+        <div transclude="serviceworker-registration-template"></div>
+      </div>
+      <div class="serviceworker-item" jsselect="$this.unregistered_versions">
+        Unregistered worker:
+        <div transclude="serviceworker-version-template"></div>
+      </div>
+    </div>
+    <div id="serviceworker-options-template">
+      <div class="checkbox">
+        <label>
+            <input type="checkbox" class="debug_on_start"
+                   jsvalues=".checked:$this.debug_on_start">
+            <span>
+              Open DevTools window and pause JavaScript execution on Service Worker startup for debugging.
+            </span>
+        </label>
+      </div>
+    </div>
+    <div id="serviceworker-client-template" class="serviceworker-client">
+      <div>
+        <span>ID: </span><span jscontent="$this.client_id"></span>
+      </div>
+      <div>
+        <span>URL: </span><span jscontent="$this.url"></span>
+      </div>
+    </div>
+  </div>
+  <!-- templates end -->
+  <h1>ServiceWorker</h1>
+  <div class="content">
+    <div id="serviceworker-options"></div>
+    <div id="serviceworker-list"></div>
+  </div>
+  <script type="module" src="serviceworker_internals.js"></script>
+</body><!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>User Actions Debug Page</title>
+  <link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
+  <link rel="stylesheet" href="user_actions.css">
+  <script type="module" src="user_actions.js"></script>
+</head>
+<body>
+  <p>
+    Listening for user actions...
+  </p>
+  <table id="user-actions-table">
+    <thead><th>User Action</th><th>Timestamp (sec.)</th></thead>
+  </table>
+</body><!doctype html>
+<html dir="ltr" lang="en">
+<head>
+<!-- If you change the title, make sure you also update
+chrome/test/functional/special_tabs.py. -->
+<meta charset="utf-8">
+<title>Sync Internals</title>
+<link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
+<link rel="stylesheet" href="about.css">
+<link rel="stylesheet" href="sync_search.css">
+<link rel="stylesheet" href="sync_node_browser.css">
+<link rel="stylesheet" href="traffic_log.css">
+<link rel="stylesheet" href="invalidations.css">
+
+</head>
+<body>
+
+<style>
+#sync-page {
+  /* TODO(akalin): Figure out a better way to make the tab box the
+     same height no matter which tab is selected. */
+  min-height: 650px;
+}
+[hidden] {
+  /* This allows us to hide tabs by adding and removing hidden attribute. */
+  display: none !important;
+}
+div[slot='panel'] {
+  margin-top: 5px;
+}
+</style>
+
+<cr-tab-box id="sync-page">
+  <div slot="tab" id="sync-about-tab">About</div>
+  <div slot="tab" id="sync-data-tab">Data</div>
+  <div slot="tab" id="sync-browser-tab">Sync Node Browser</div>
+  <div slot="tab" id="sync-search-tab">Search</div>
+  <div slot="tab" id="sync-user-events-tab">User Events</div>
+  <div slot="tab" id="sync-traffic-log-tab">Traffic Log</div>
+  <div slot="tab" id="sync-invalidations-tab">Invalidations</div>
+  <div slot="panel">
+    <div id="status">
+      <div id="dump">
+        <button id="dump-status">Dump status</button>
+        <input type="checkbox" id="include-ids">
+        Include Identifiers
+      </div>
+      <div id="import">
+        <button id="import-status">Import status</button>
+      </div>
+      <div id="status-data">
+        <textarea rows="10" cols="30" id="status-text"></textarea>
+      </div>
+    </div>
+
+    <div id='about-info'>
+      <div class="section" jsselect="details">
+        <h2 jscontent="title"></h2>
+        <table class="about-details">
+          <tr jsselect="data"
+                jsvalues="class:$this.stat_status"
+                jseval='highlightIfChanged(this, this.children[1].innerText, stat_value)'>
+            <td class="detail" jscontent="stat_name" width=50%></td>
+            <td class="value" jscontent="stat_value" width=50%></td>
+          </tr>
+        </table>
+      </div>
+
+      <div id="request-start-stop-wrapper" jsskip="true">
+        <button id="request-start">Request Start</button>
+        <button id="request-stop-keep-data">Stop Sync (Keep Data)</button>
+        <button id="request-stop-clear-data">Disable Sync (Clear Data)</button>
+      </div>
+
+      <div id="traffic-event-container-wrapper" jsskip="true">
+        <h2 style="display:inline-block">Sync Protocol Log</h2>
+        <input type="checkbox" id="capture-specifics">
+        <label for="capture-specifics">Capture Specifics</label>
+        <button id="trigger-refresh">Trigger GetUpdates</button>
+        <div id="traffic-event-container">
+          <div class="traffic-event-entry"
+               jsselect="events"
+               jseval="addAboutExpandListener(this)">
+            <span class="time" jscontent="(new Date(time)).toLocaleString()"></span>
+            <span class="type" jscontent="type"></span>
+            <pre class="details" jscontent="details"></pre>
+            <pre class="proto" jscontent="JSON.stringify(proto, null, 2)"></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="section" style="overflow-x: auto">
+        <h2>Type Info</h2>
+        <table id="typeInfo">
+          <tr jsselect="type_status" jsvalues="class:$this.status">
+            <td jscontent="name" width=30%></td>
+            <td jscontent="num_entries" width=10%></td>
+            <td jscontent="num_live" width=10%></td>
+            <td jscontent="message" width=40% class="message"></td>
+            <td jscontent="state" width=10%></td>
+          </tr>
+        </table>
+      </div>
+
+      <div class="section" jsdisplay="unrecoverable_error_detected">
+        <p>
+          <span class="err" jscontent="unrecoverable_error_message"></span>
+        </p>
+      </div>
+
+      <div class="section" jsdisplay="actionable_error_detected">
+        <p>
+          <h2>Actionable Error</h2>
+          <table id="actionableError">
+            <tr jsselect="actionable_error">
+              <td jscontent="stat_name"></td>
+              <td jscontent="stat_value"></td>
+            </tr>
+          </table>
+        </p>
+      </div>
+    </div>
+  </div>
+  <div slot="panel">
+    <p><strong>Some personal info may be in the events dump. Be
+    careful about posting data dumps on bug reports.</strong></p>
+
+    <button id="dump-to-text">Dump sync events to text</button>
+
+    <pre id="data-dump"></pre>
+
+    <hr>
+
+    <div id="node-type-checkboxes">
+    </div>
+
+
+    <button id="dump-to-file">Dump sync nodes to file</button>
+
+    <input type="checkbox" id="include-specifics">include node content <font color="red">WARNING: This is likely to include personal information.</font><br>
+
+    <a style="display: none" id="dump-to-file-anchor"></a>
+  </div>
+  <div slot="panel">
+    <!-- TODO(akalin): Move to a three-pane view; node tree on the left
+    (minus leaf nodes), tree contents list on the upper right, selected
+    item detail on the lower right. -->
+
+    <div id="sync-node-main">
+      <!-- TODO(akalin): Figure out how to get this element to be as tall
+           as its container (style.height=100% doesn't work).  Also fix
+           behavior when tree is too tall (currently it makes you scroll the
+           entire page). -->
+      <div id="sync-node-browser-refresher">
+        <button id="node-browser-refresh-button">Refresh</button>
+        <div id="node-refresh-status">
+          Last refresh time: <span id="node-browser-refresh-time">Never</span>
+        </div>
+      </div>
+      <div id="sync-node-browser-container">
+        <div id="sync-node-tree-container">
+        </div>
+        <cr-splitter id="sync-node-splitter"></cr-splitter>
+        <div id="node-details">
+          <table>
+            <tr>
+              <td>Title</td>
+              <td jscontent="NON_UNIQUE_NAME"></td>
+            </tr>
+            <tr>
+              <td>ID</td>
+              <td jscontent="ID"></td>
+            </tr>
+            <tr>
+              <td>Modification Time</td>
+              <td jscontent="MTIME"></td>
+            </tr>
+            <tr>
+              <td>Parent</td>
+              <td jscontent="PARENT_ID"></td>
+            </tr>
+            <tr>
+              <td>Is Folder</td>
+              <td jscontent="IS_DIR"></td>
+            </tr>
+            <tr>
+              <td>Type</td>
+              <td jscontent="modelType"></td>
+            </tr>
+            <tr>
+              <td>External ID</td>
+              <td jscontent="LOCAL_EXTERNAL_ID"></td>
+            </tr>
+            <tr jsdisplay="$this.hasOwnProperty('positionIndex')">
+              <td>Position Index</td>
+              <td jscontent="positionIndex"></td>
+            </tr>
+          </table>
+          <pre jscontent="JSON.stringify($this, null, 2)"></pre></td>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div slot="panel">
+    <p>
+    <input id="sync-search-query" type="search"
+           placeholder="Search Sync Data">
+    <button id="sync-search-submit">Search</button>
+      <span id="sync-search-quicklink-container">Quick Search:
+        <a class='sync-search-quicklink' data-query="&quot;IS_UNAPPLIED_UPDATE&quot;: true"
+          href="#">Unapplied Updates</a>
+        <a class='sync-search-quicklink' data-query="&quot;IS_UNSYNCED&quot;: true"
+          href="#">Unsynced</a>
+        <a class='sync-search-quicklink' data-query="((&quot;IS_UNAPPLIED_UPDATE&quot;: true)[\s\S]*(&quot;IS_UNSYNCED&quot;: true))|((&quot;IS_UNSYNCED&quot;: true)[\s\S]*(&quot;IS_UNAPPLIED_UPDATE&quot;: true))"
+          href="#">Conflicted</a>
+        <a class='sync-search-quicklink' data-query="&quot;IS_DEL&quot;: true"
+          href="#">Deleted</a>
+      </span>
+    </p>
+    <p>
+    <span id="sync-search-status"></span>
+    </p>
+
+    <div id="sync-results-container">
+      <ul id="sync-results-list"></ul>
+      <cr-splitter id="sync-results-splitter"></cr-splitter>
+      <div id="sync-result-details-container">
+        <pre id="sync-result-details"></pre>
+      </div>
+    </div>
+  </div>
+  <div slot="panel">
+    <input id="event-time-usec-input" type="text" placeholder="event_time_usec">
+    <input id="navigation-id-input" type="text" placeholder="navigation_id">
+    <button id="create-event-button">Create</button>
+  </div>
+  <div slot="panel">
+    <div id="traffic-event-fullscreen-container">
+      <div class="traffic-event-entry-fullscreen"
+          jsselect="events"
+          jseval="TrafficLogTag.getInstance().addExpandListener(this)">
+        <span class="time" jscontent="(new Date(time)).toLocaleString()"></span>
+        <span class="type" jscontent="type"></span>
+        <pre class="details" jscontent="details"></pre>
+        <pre class="proto" jscontent="JSON.stringify(proto, null, 2)"></pre>
+      </div>
+    </div>
+  </div>
+  <div slot="panel">
+    <table id="invalidation-counters-table">
+      <thead>
+        <th>Data type</th>
+        <th>Count</th>
+        <th>Last time</th>
+      </thead>
+      <tbody>
+        <tr jsselect="rows">
+          <td jscontent="type"></td>
+          <td jscontent="count"></td>
+          <td jscontent="time"></td>
+        </tr>
+      </tbody>
+    </table>
+    <textarea id="invalidations-log" rows="10" cols="80"readonly></textarea>
+  </div>
+</cr-tab-box>
+
+<script type="module" src="sync_index.js"></script>
+</body>
+</html><!doctype html>
+<html dir="ltr" lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
+  <link rel="stylesheet" type="text/css" href="signin_index.css">
+</head>
+<body>
+  <div id='signin-info'>
+    <div class="section" jsselect="signin_info">
+      <h2 jscontent="title"></h2>
+      <table class="signin-details">
+        <tr jsselect="data"
+            jsvalues="class:setClassFromValue($this.value)"
+            jseval="highlightIfChanged(this,
+                      this.children[1].innerText, value)">
+          <td jscontent="label"></td>
+          <td jscontent="status"></td>
+          <td jscontent="time" jsdisplay="time"></td>
+          <td jsdisplay="time.length==0">&nbsp;</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+  <div id='token-info'>
+    <h2>Access Token Details By Account</h2>
+    <div class="tokenSection" jsselect="token_info">
+      <h3 jscontent="title"></h3>
+      <table class="signin-details">
+        <tr class="header">
+          <td>Service</td>
+          <td>Requested Scopes</td>
+          <td>Request Time</td>
+          <td>Request Status</td>
+        </tr>
+        <tr jsselect="data"
+            jsvalues="class:setClassFromValue($this.status)"
+            jseval="highlightIfAnyChanged(this,
+                      [[this.children[1].innerText, scopes],
+                      [this.children[2].innerText, request_time],
+                      [this.children[3].innerText, status]])">
+          <td jscontent="service"></td>
+          <td jsvalues=".textContent: scopes"></td>
+          <td jscontent="request_time"></td>
+          <td jsvalues=".textContent: status"></td>
+        </tr>
+      </table>
+    </div>
+  </div>
+  <div id='cookie-info'>
+    <h2>Accounts in Cookie Jar</h2>
+    <div class="cookieSection">
+      <table class="signin-details">
+        <tr class="header">
+          <td>Email Address</td>
+          <td>Gaia ID</td>
+          <td>Validity</td>
+        </tr>
+        <tr jsselect="cookie_info">
+          <td jscontent="email"></td>
+          <td jscontent="gaia_id"></td>
+          <td jscontent="valid"></td>
+        </tr>
+      </table>
+    </div>
+  </div>
+  <div id="account-info">
+    <h2>Accounts in Token Service</h2>
+    <div class="account-section">
+      <table class="signin-details">
+        <tr class="header">
+          <td>Account Id</td>
+          <td>Has refresh token</td>
+          <td>Has persistent auth error</td>
+        </tr>
+        <tr jsselect="accountInfo">
+          <td jscontent="accountId"></td>
+          <td jscontent="hasRefreshToken"></td>
+          <td jscontent="hasAuthError"></td>
+        </tr>
+      </table>
+    </div>
+  </div>
+  <div id="refresh-token-events">
+    <h2>Refresh token events</h2>
+    <div class="refresh-token-events-section">
+      <table class="signin-details">
+        <tr class="header">
+          <td>Timestamp</td>
+          <td>Accound Id</td>
+          <td>Event type</td>
+          <td>Source</td>
+        </tr>
+        <tr jsselect="refreshTokenEvents">
+          <td jscontent="timestamp"></td>
+          <td jscontent="accountId"></td>
+          <td jscontent="type"></td>
+          <td jscontent="source"></td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <script type="module" src="signin_internals.js"></script>
+</body>
+</html><!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="color-scheme" content="light dark">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sandbox Status</title>
+    <link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
+    <style type="text/css">
+      #sandbox-status {
+        border: 1px solid gray;
+      }
+      #sandbox-status td {
+        border: 1px solid gray;
+        padding: 3px;
+        vertical-align: top;
+      }
+      #evaluation {
+        font-weight: bold;
+      }
+      .good {
+        background-color: rgb(143, 218, 146);
+      }
+      .bad {
+        background-color: rgb(249, 156, 149);
+      }
+      .medium {
+        background-color: rgb(255, 255, 90);
+      }
+      .info {
+        background-color: rgb(169, 217, 239);
+      }
+
+    </style>
+    <script type="module" src="sandbox_internals.js"></script>
+  </head>
+  <body>
+    <h1>Sandbox Status</h1>
+
+    <table id="sandbox-status">
+    </table>
+    <p id="evaluation"></p>
+
+  </body>
+</html><!DOCTYPE HTML>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Safe Browsing</title>
+    <link rel="stylesheet" href="safe_browsing.css">
+    <link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
+  </head>
+  <body>
+    <div id="header">
+      <h1 id="sb-title">Safe Browsing</h1>
+    </div>
+    <cr-tab-box id='tabbox'>
+      <div slot="tab" id="preferences">Preferences</div>
+      <div slot="tab" id="db-manager">Database Manager</div>
+      <div slot="tab" id="hash-cache">Hash Cache</div>
+      <div slot="tab" id="csbrr">Client Safe Browsing Report Requests</div>
+      <div slot="tab" id="download-protection">Download Protection</div>
+      <div slot="tab" id="cpr">Client Phishing Requests</div>
+      <div slot="tab" id="password-protection">Password Protection</div>
+      <div slot="tab" id="rt-lookup">RT Lookup</div>
+      <div slot="tab" id="referrer-chain">Referrer Chain</div>
+      <div slot="tab" id="log">Log Messages</div>
+      <div slot="tab" id="reporting">Reporting Events</div>
+      <div slot="tab" id="deep-scan">Deep Scans</div>
+      <div slot="panel">
+        <h2>Experiments</h2>
+        <div class="content">
+          <p id="experiments-list" class="result-container"></p>
+        </div>
+        <h2>Preferences</h2>
+        <div class="content">
+          <p id="preferences-list" class="result-container"></p>
+        </div>
+        <h2>Policies</h2>
+        <div class="content">
+          <p id="policies-list" class="result-container"></p>
+        </div>
+        <h2>Safe Browsing Cookie</h2>
+        <div class="content">
+          <p id="cookie-panel" class="result-container"></p>
+        </div>
+      </div>
+      <div slot="panel">
+        <h2>Database Manager</h2>
+        <div class="content">
+          <p id="database-info-list" class="result-container"></p>
+        </div>
+      </div>
+      <div slot="panel">
+        <h2>Full Hash Cache</h2>
+        <div class="content">
+          <p id="full-hash-cache-info"></p>
+        </div>
+      </div>
+      <div slot="panel">
+        <h2>CSBRRs (ClientSafeBrowsingReportRequest) sent</h2>
+        <div class="content">
+          <p id="sent-csbrrs-list" class="result-container"></p>
+        </div>
+        <h2>Hit Reports sent</h2>
+        <div class="content">
+          <p id="sent-hit-report-list" class="result-container"></p>
+        </div>
+      </div>
+      <div slot="panel">
+        <h2>Download URLs checked</h2>
+        <div class="content">
+          <p id="download-urls-checked-list"></p>
+        </div>
+        <h2>Download requests (ClientDownloadRequest) sent</h2>
+        <div class="content">
+          <p id="sent-client-download-requests-list"></p>
+        </div>
+        <h2>Download responses (ClientDownloadResponse) received</h2>
+        <div class="content">
+          <p id="received-client-download-response-list"></p>
+        </div>
+      </div>
+      <div slot="panel">
+        <h2>Client Phishing requests sent</h2>
+        <div class="content">
+          <p id="sent-client-phishing-requests-list"></p>
+        </div>
+        <h2>Client Phishing responses sent</h2>
+        <div class="content">
+          <p id="received-client-phishing-response-list"></p>
+        </div>
+      </div>
+      <div slot="panel">
+        <h2>Saved Password Hashes</h2>
+        <div class="content">
+          <p id="saved-passwords"></p>
+        </div>
+        <h2>Password Protection Events</h2>
+        <div class="content">
+          <p id="pg-event-log"></p>
+        </div>
+        <h2>Security Events</h2>
+        <div class="content">
+          <p id="security-event-log"></p>
+        </div>
+        <h2>Password Protection Pings</h2>
+        <table id="pg-ping-list" class="request-response"></table>
+      </div>
+      <div slot="panel">
+        <h2>RT Lookup Pings</h2>
+        <table id="rt-lookup-ping-list" class="request-response"></table>
+      </div>
+      <div slot="panel">
+        <h2>Referrer Chain</h2>
+        <form id="get-referrer-chain-form">
+          <input type="text" id="referrer-chain-url">
+          <input type="submit" value="Get Chain">
+        </form>
+        <div class="content">
+          <p id="referrer-chain-content"></p>
+        </div>
+        <h2>Most Recent Referring App Info (Android)</h2>
+        <p id="referring-app-info" class="result-container"></p>
+      </div>
+      <div slot="panel">
+        <h2>Log Messages</h2>
+        <div class="content">
+          <p id="log-messages"></p>
+        </div>
+      </div>
+      <div slot="panel">
+        <h2>Reporting Events</h2>
+        <div class="content">
+          <p id="reporting-events"></p>
+        </div>
+      </div>
+      <div slot="panel">
+        <h2>Deep Scans</h2>
+        <table id="deep-scan-list" class="request-response"></table>
+      </div>
+    </cr-tab-box>
+    <template id="result-template">
+      <div>
+        <span class="bold-span"></span>
+        <span></span>
+      </div>
+    </template>
+    <template id="cookie-template">
+      <div>
+        <span class="bold-span">Value: </span>
+        <span class="result"></span>
+      </div>
+      <span class="bold-span">Created: </span>
+      <span class="result"></span>
+    </template>
+    <template id="rt-lookup-template">
+      <span class="bold-span">RT Lookup Experiment Enabled: </span>
+      <span id="experiment-bool"></span>
+    </template>
+    <script type="module" src="safe_browsing.js"></script>
+  </body>
+</html><!doctype html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <title>Quota Internals</title>
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" href="chrome://resources/css/roboto.css">
+  <link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
+  <link rel="stylesheet" href="quota_internals.css">
+  <script type="module" src="quota_internals.js" defer></script>
+</head>
+  <body>
+    <cr-tab-box>
+        <div id="summary-tab" slot="tab">Summary</div>
+        <div id="usage-tab" slot="tab">Usage &amp; Quota</div>
+        <div id="summary-tabpanel" slot="panel">
+          <!-- Summary -->
+          <h2>Summary</h2>
+          <h3>Disk Availability</h3>
+          <table class="disk-availability-table">
+            <thead>
+              <th>Total Space</th>
+              <th>Available Space</th>
+              <th>Temporary Storage Usage</th>
+              <th>Persistent Storage Usage</th>
+              <th>Syncable Storage Usage</th>
+              <th>Temp Pool Size</th>
+            </thead>
+            <tbody id="listeners-tbody"></tbody>
+          </table>
+
+          <h3>Eviction Statistics</h3>
+          <table class="eviction-statistics-table">
+            <thead class="eviction-statistics-header">
+              <th>Errors on Getting Usage and Quota</th>
+              <th>Evicted Buckets</th>
+              <th>Eviction Rounds</th>
+              <th>Skipped Eviction Rounds</th>
+            </thead>
+            <tbody id="eviction-tbody"></tbody>
+          </table>
+
+          <h2 class="test-storage-pressure-header">
+            Test Storage Pressure Behavior</h2>
+          <form>
+            <label>Origin to test: </label>
+            <input type="url" name="origin-to-test" id="origin-to-test"
+                placeholder="https://example.com" pattern="https://.*"
+                size="30" required>
+            <button name="trigger-notification" id="trigger-notification"
+                type="submit">
+              Trigger Storage Pressure Notification
+            </button>
+          </form>
+        </div>
+
+        <div id="usage-tabpanel" slot="panel">
+          <!-- Usage and Quota -->
+          <h2>Bucket Usage Data</h2>
+          <table>
+            <thead>
+              <th>Storage Key</th>
+              <th>Storage Type</th>
+              <th>Bucket</th>
+              <th>Usage (B)</th>
+              <th>Use Count</th>
+              <th>Last Accessed</th>
+              <th>Last Modified</th>
+            </thead>
+            <tbody id="usage-and-quota-tbody"></tbody>
+          </table>
+        </div>
+    </cr-tab-box>
+
+    <template id="listener-row">
+      <tr>
+        <td class="total-space"></td>
+        <td class="available-space"></td>
+        <td class="temporary-global-and-unlimited-usage"></td>
+        <td class="persistent-global-and-unlimited-usage"></td>
+        <td class="syncable-global-and-unlimited-usage"></td>
+        <td class="temp-pool-size"></td>
+      </tr>
+    </template>
+    <template id="eviction-row">
+      <tr class="eviction-tr">
+        <td class="errors-on-getting-usage-and-quota"></td>
+        <td class="evicted-buckets"></td>
+        <td class="eviction-rounds"></td>
+        <td class="skipped-eviction-rounds"></td>
+      </tr>
+    </template>
+    <template id="usage-and-quota-row">
+        <tr class="usage-and-quota-template-row">
+          <td class="storage-key"></td>
+          <td class="storage-type"></td>
+          <td class="bucket"></td>
+          <td class="usage"></td>
+          <td class="use-count"></td>
+          <td class="last-accessed"></td>
+          <td class="last-modified"></td>
+        </tr>
+    </template>
+  </body>
+</html>
+
+<!--
+Copyright 2018 The Chromium Authors
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
+-->
+<!doctype html>
+<html dir="ltr" lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
+  <link rel="stylesheet" href="process_internals.css">
+  <script type="module" src='process_internals.js'></script>
+  <title>Process Model Internals</title>
+</head>
+<body>
+
+<div id="container">
+  <div id="navigation">
+    <div id="caption">Process Internals</div>
+  </div>
+  <div id="content">
+    <div id="general">
+      <div class="content-header">General info</div>
+      <div id="general-info">
+        <div id="site-isolation-mode">Site Isolation mode: <span id='isolation-mode'>unknown</span></div>
+        <div id="isolated-origins-container">
+          <div id="user-triggered-isolated-origins"></div>
+          <div id="web-triggered-isolated-origins"></div>
+          <div id="global-isolated-origins"></div>
+        </div>
+      </div>
+    </div>
+    <div id="web-contents">
+      <div class="content-header">Frame Trees</div>
+      <div id="wc-list" class="list pages"></div>
+      <div id="tree-view-container">
+        <button id="refresh-button">Refresh</button>
+        <div>Legend:</div>
+        <div>Frame[<i>process_id</i>:<i>routing_id</i>:<i>agent_scheduling_group_id</i>]:
+          SI:<i>site_instance_id</i>, <i>whether process is locked to a
+            site</i>, site: <i>site_url</i> | url:
+          <i>last_committed_url</i>
+        </div>
+        <cr-tree id="tree-view"></cr-tree>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
+</html>
+</html>
+Process Internals
+General info
+Frame Trees
+General info
+Site Isolation mode: COOP, Password Sites, Logged-in Sites
+The following origins are isolated because you previously typed a password or logged in on these sites (4 total). Clear cookies or history to wipe this list; this takes effect after a restart.
+https://facebook.com
+https://github.com
+https://google.com
+https://mail.com
+The following origins are isolated based on runtime heuristics triggered directly by web pages, such as Cross-Origin-Opener-Policy headers. Clear cookies or history to wipe this list; this takes effect after a restart.
+https://gstatic.com
+The following origins are isolated by default for all users (791 total). A description of how each origin was activated is provided in parentheses.
+http://dps.gov.co (Built-in)
+http://fritz.box (Built-in)
+http://haryanatet.in (Built-in)
+http://hryssc.in (Built-in)
+http://imss.gob.mx (Built-in)
+http://joker123.net (Built-in)
+http://meb.gov.tr (Built-in)
+http://medu.ir (Built-in)
+http://telcelinstitucional.com (Built-in)
+http://tplinkwifi.net (Built-in)
+http://upsdc.gov.in (Built-in)
+http://zlotxo.com (Built-in)
+https://23andme.com (Built-in)
+https://365online.com (Built-in)
+https://5ka.ru (Built-in)
+https://7pass.de (Built-in)
+https://absher.sa (Built-in)
+https://abv.bg (Built-in)
+https://accenture.com (Built-in)
+https://access.service.gov.uk (Built-in)
+https://acesso.gov.br (Built-in)
+https://acesso.gov.pt (Built-in)
+https://activision.com (Built-in)
+https://adjarabet.com (Built-in)
+https://adliran.ir (Built-in)
+https://adobe.com (Built-in)
+https://adp.com (Built-in)
+https://adquiramexico.com.mx (Built-in)
+https://adxpartner.com (Built-in)
+https://aeon.co.jp (Built-in)
+https://afip.gob.ar (Built-in)
+https://afpcapital.cl (Built-in)
+https://afphabitat.cl (Built-in)
+https://afpmodelo.cl (Built-in)
+https://afterpay.com (Built-in)
+https://agah.com (Built-in)
+https://airtel.in (Built-in)
+https://akbank.com.tr (Built-in)
+https://alahlynet.com.eg (Built-in)
+https://aliexpress.com (Built-in)
+https://aliexpress.ru (Built-in)
+https://aliorbank.pl (Built-in)
+https://allegro.pl (Built-in)
+https://allstate.com (Built-in)
+https://amazon.ca (Built-in)
+https://amazon.co.jp (Built-in)
+https://amazon.co.uk (Built-in)
+https://amazon.com.br (Built-in)
+https://amazon.com.mx (Built-in)
+https://amazon.com.tr (Built-in)
+https://amazon.com (Built-in)
+https://amazon.de (Built-in)
+https://amazon.es (Built-in)
+https://amazon.fr (Built-in)
+https://amazon.in (Built-in)
+https://amazon.it (Built-in)
+https://amazon.work (Built-in)
+https://ambbo.co (Built-in)
+https://ambbo.net (Built-in)
+https://ameli.fr (Built-in)
+https://americanas.com.br (Built-in)
+https://americanexpress.com (Built-in)
+https://amwayglobal.com (Built-in)
+https://anadolu.edu.tr (Built-in)
+https://ancestry.com (Built-in)
+https://anm.gov.my (Built-in)
+https://anser.ne.jp (Built-in)
+https://anses.gob.ar (Built-in)
+https://ants.gouv.fr (Built-in)
+https://anz.com (Built-in)
+https://aol.com (Built-in)
+https://ap.gov.in (Built-in)
+https://apple.com (Built-in)
+https://arcot.com (Built-in)
+https://argentina.gob.ar (Built-in)
+https://argos.co.uk (Built-in)
+https://asb.by (Built-in)
+https://asda.com (Built-in)
+https://asos.com (Built-in)
+https://atauni.edu.tr (Built-in)
+https://aternos.org (Built-in)
+https://athenahealth.com (Built-in)
+https://att.com (Built-in)
+https://au.com (Built-in)
+https://auchan.fr (Built-in)
+https://auone.jp (Built-in)
+https://auth0.com (Built-in)
+https://avito.ru (Built-in)
+https://avon.com.br (Built-in)
+https://avvillas.com.co (Built-in)
+https://axioscloud.it (Built-in)
+https://axisbank.co.in (Built-in)
+https://axisbank.com (Built-in)
+https://badoo.com (Built-in)
+https://banamex.com (Built-in)
+https://bancadigitalbod.com (Built-in)
+https://bancainternet.com.ar (Built-in)
+https://bancamiga.com (Built-in)
+https://bancaribe.com.ve (Built-in)
+https://bancocajasocial.com (Built-in)
+https://bancochile.cl (Built-in)
+https://bancodebogota.com (Built-in)
+https://bancoestado.cl (Built-in)
+https://bancofalabella.cl (Built-in)
+https://bancogalicia.com.ar (Built-in)
+https://bancopan.com.br (Built-in)
+https://bancopatagonia.com.ar (Built-in)
+https://banesconline.com (Built-in)
+https://banfanb.com.ve (Built-in)
+https://bankia.es (Built-in)
+https://bankislam.biz (Built-in)
+https://bankjateng.co.id (Built-in)
+https://bankmillennium.pl (Built-in)
+https://bankofamerica.com (Built-in)
+https://bankofindia.com (Built-in)
+https://banrural.com.gt (Built-in)
+https://banvenez.com (Built-in)
+https://bathandbodyworks.com (Built-in)
+https://bbc.com (Built-in)
+https://bbva.com.ar (Built-in)
+https://bbva.es (Built-in)
+https://bci.cl (Built-in)
+https://bdo.com.ph (Built-in)
+https://bestbuy.com (Built-in)
+https://bet365.com (Built-in)
+https://bet365.es (Built-in)
+https://bet9ja.com (Built-in)
+https://betika.com (Built-in)
+https://betplay.com.co (Built-in)
+https://betway.co.za (Built-in)
+https://bicentenariobu.com (Built-in)
+https://bienestarazteca.com.mx (Built-in)
+https://biess.fin.ec (Built-in)
+https://billdesk.com (Built-in)
+https://binance.com (Built-in)
+https://binomo.com (Built-in)
+https://blockchain.com (Built-in)
+https://bmi.ir (Built-in)
+https://bn.com.pe (Built-in)
+https://bnc.com.ve (Built-in)
+https://boatrace.jp (Built-in)
+https://bobibanking.com (Built-in)
+https://bol.com (Built-in)
+https://booking.com (Built-in)
+https://boots.com (Built-in)
+https://bouyguestelecom.fr (Built-in)
+https://bpi.com.ph (Built-in)
+https://brassring.com (Built-in)
+https://bri.co.id (Built-in)
+https://brou.com.uy (Built-in)
+https://bsan.mobi (Built-in)
+https://bt.com (Built-in)
+https://bt.gob.ve (Built-in)
+https://ca.gov (Built-in)
+https://cabinet.mil.ru (Built-in)
+https://caf.fr (Built-in)
+https://cafis-paynet.jp (Built-in)
+https://caixa.gov.br (Built-in)
+https://callofduty.com (Built-in)
+https://camscanner.com (Built-in)
+https://canal-plus.com (Built-in)
+https://canarabank.in (Built-in)
+https://canva.com (Built-in)
+https://capitalone.com (Built-in)
+https://carrefour.es (Built-in)
+https://casasbahia.com.br (Built-in)
+https://casualdating.com (Built-in)
+https://catho.com.br (Built-in)
+https://cbs.com (Built-in)
+https://cdiscount.com (Built-in)
+https://cdmx.gob.mx (Built-in)
+https://cdsc.com.np (Built-in)
+https://cdslindia.com (Built-in)
+https://centrum24.pl (Built-in)
+https://cfe.mx (Built-in)
+https://chase.com (Built-in)
+https://chess.com (Built-in)
+https://chewy.com (Built-in)
+https://chime.com (Built-in)
+https://churchofjesuschrist.org (Built-in)
+https://ciceksepeti.com (Built-in)
+https://cimbclicks.com.my (Built-in)
+https://citi.com (Built-in)
+https://citibank.co.in (Built-in)
+https://citibankonline.com (Built-in)
+https://claro.com.ar (Built-in)
+https://claro.com.br (Built-in)
+https://claveunica.gob.cl (Built-in)
+https://clearscore.com (Built-in)
+https://clegc-gckey.gc.ca (Built-in)
+https://coca-cola.com.ar (Built-in)
+https://coinbase.com (Built-in)
+https://colaboraread.com.br (Built-in)
+https://colpatria.com.co (Built-in)
+https://comenity.net (Built-in)
+https://commbank.com.au (Built-in)
+https://consumidorpositivo.com.br (Built-in)
+https://coppel.com (Built-in)
+https://coronaprover.dk (Built-in)
+https://correios.com.br (Built-in)
+https://costco.com (Built-in)
+https://coursera.org (Built-in)
+https://cox.com (Built-in)
+https://cpfl.com.br (Built-in)
+https://cra-arc.gc.ca (Built-in)
+https://craigslist.org (Built-in)
+https://credit-agricole.fr (Built-in)
+https://credit-agricole.pl (Built-in)
+https://creditkarma.com (Built-in)
+https://creditmutuel.fr (Built-in)
+https://creditonebank.com (Built-in)
+https://creditsesame.com (Built-in)
+https://cricketwireless.com (Built-in)
+https://crowd1.com (Built-in)
+https://crunchyroll.com (Built-in)
+https://crystalbet.com (Built-in)
+https://cvs.com (Built-in)
+https://cvshealth.com (Built-in)
+https://dafiti.com.br (Built-in)
+https://darsak.gov.jo (Built-in)
+https://dazn.com (Built-in)
+https://dbs.com.sg (Built-in)
+https://decathlon.es (Built-in)
+https://decathlon.net (Built-in)
+https://deezer.com (Built-in)
+https://demre.cl (Built-in)
+https://desjardins.com (Built-in)
+https://detma.org (Built-in)
+https://detran.sp.gov.br (Built-in)
+https://deviantart.com (Built-in)
+https://dhl.de (Built-in)
+https://dialogoydeportes.net (Built-in)
+https://difi.no (Built-in)
+https://digialm.com (Built-in)
+https://digid.nl (Built-in)
+https://directvgo.com (Built-in)
+https://discord.com (Built-in)
+https://discover.com (Built-in)
+https://discovery.co.za (Built-in)
+https://disneyplus.com (Built-in)
+https://dnevnik.ru (Built-in)
+https://docomo.ne.jp (Built-in)
+https://doctolib.fr (Built-in)
+https://docusign.com (Built-in)
+https://dominos.com (Built-in)
+https://doordash.com (Built-in)
+https://dropbox.com (Built-in)
+https://e-bbva.com.co (Built-in)
+https://e-boks.dk (Built-in)
+https://ea.com (Built-in)
+https://eba.gov.tr (Built-in)
+https://ebay-kleinanzeigen.de (Built-in)
+https://ebay.co.uk (Built-in)
+https://ebay.com (Built-in)
+https://ebay.de (Built-in)
+https://eci.gov.in (Built-in)
+https://edenred.io (Built-in)
+https://edf.fr (Built-in)
+https://educacao.sp.gov.br (Built-in)
+https://ee.co.uk (Built-in)
+https://elcorteingles.es (Built-in)
+https://emofid.com (Built-in)
+https://enabiz.gov.tr (Built-in)
+https://eneldistribuicaosp.com.br (Built-in)
+https://enstage-sas.com (Built-in)
+https://epfindia.gov.in (Built-in)
+https://epicgames.com (Built-in)
+https://eposcard.co.jp (Built-in)
+https://epssanitas.com (Built-in)
+https://etsy.com (Built-in)
+https://euro.com.pl (Built-in)
+https://eurobank.gr (Built-in)
+https://evergent.com (Built-in)
+https://ewaybillgst.gov.in (Built-in)
+https://experian.com (Built-in)
+https://experianidentityservice.co.uk (Built-in)
+https://exxen.com (Built-in)
+https://facebook.com (Built-in)
+https://falabella.com (Built-in)
+https://fazenda.sp.gov.br (Built-in)
+https://fdj.fr (Built-in)
+https://fedex.com (Built-in)
+https://fidelity.com (Built-in)
+https://financial-net.com (Built-in)
+https://fingerhut.com (Built-in)
+https://fitbit.com (Built-in)
+https://flipkart.com (Built-in)
+https://flirt.com (Built-in)
+https://fnac.com (Built-in)
+https://free.fr (Built-in)
+https://freemail.hu (Built-in)
+https://fssnet.co.in (Built-in)
+https://fubo.tv (Built-in)
+https://funimation.com (Built-in)
+https://gamestop.com (Built-in)
+https://garantibbva.com.tr (Built-in)
+https://garena.com (Built-in)
+https://gdpd.xyz (Built-in)
+https://geico.com (Built-in)
+https://ghoori.com.bd (Built-in)
+https://gib.gov.tr (Built-in)
+https://giffgaff.com (Built-in)
+https://github.com (Built-in)
+https://gittigidiyor.com (Built-in)
+https://globo.com (Built-in)
+https://gmx.net (Built-in)
+https://go2bank.com (Built-in)
+https://godaddy.com (Built-in)
+https://gog.com (Built-in)
+https://goodreads.com (Built-in)
+https://accounts.google.com (Built-in)
+https://google.com (Built-in)
+https://gosuslugi.ru (Built-in)
+https://gramtakipci.com (Built-in)
+https://greendot.com (Built-in)
+https://grubhub.com (Built-in)
+https://gsis.gr (Built-in)
+https://gst.gov.in (Built-in)
+https://h2oh.com.br (Built-in)
+https://halifax-online.co.uk (Built-in)
+https://halkbank.com.tr (Built-in)
+https://hastanerandevu.gov.tr (Built-in)
+https://havan.com.br (Built-in)
+https://hbomax.com (Built-in)
+https://hdfcbank.com (Built-in)
+https://hepsiburada.com (Built-in)
+https://hm.com (Built-in)
+https://hollywoodbets.net (Built-in)
+https://homedepot.com (Built-in)
+https://honeygain.com (Built-in)
+https://hongleongconnect.my (Built-in)
+https://hotmart.com (Built-in)
+https://hp.com (Built-in)
+https://hrblock.com (Built-in)
+https://hrdc-drhc.gc.ca (Built-in)
+https://hsbc.com.mx (Built-in)
+https://huawei.com (Built-in)
+https://hulu.com (Built-in)
+https://iam.gov.sa (Built-in)
+https://ibanking-services.com (Built-in)
+https://ibps.in (Built-in)
+https://iceland.co.uk (Built-in)
+https://icicibank.com (Built-in)
+https://icicidirect.com (Built-in)
+https://icloud.com (Built-in)
+https://id.me (Built-in)
+https://idbibank.co.in (Built-in)
+https://iess.gob.ec (Built-in)
+https://igfollower.net (Built-in)
+https://ikco.ir (Built-in)
+https://ikea.com (Built-in)
+https://iliad.it (Built-in)
+https://impots.gouv.fr (Built-in)
+https://inbox.lv (Built-in)
+https://incometaxindiaefiling.gov.in (Built-in)
+https://indeed.com (Built-in)
+https://indianrail.gov.in (Built-in)
+https://inep.gov.br (Built-in)
+https://infonavit.org.mx (Built-in)
+https://ingbank.pl (Built-in)
+https://inps.it (Built-in)
+https://instacart.com (Built-in)
+https://instagram.com (Built-in)
+https://interia.pl (Built-in)
+https://interior.gob.cl (Built-in)
+https://intermatico.com (Built-in)
+https://intuit.com (Built-in)
+https://iobnet.co.in (Built-in)
+https://ipko.pl (Built-in)
+https://irakyat.com.my (Built-in)
+https://irctc.co.in (Built-in)
+https://irs.gov (Built-in)
+https://isbank.com.tr (Built-in)
+https://iskur.gov.tr (Built-in)
+https://itau.com.br (Built-in)
+https://itv.com (Built-in)
+https://izzi.mx (Built-in)
+https://jalan.net (Built-in)
+https://jcb.co.jp (Built-in)
+https://jcpenney.com (Built-in)
+https://jibjab.com (Built-in)
+https://johnnys-net.jp (Built-in)
+https://joinindianarmy.nic.in (Built-in)
+https://joinindiannavy.gov.in (Built-in)
+https://joker123.net (Built-in)
+https://jpay.com (Built-in)
+https://jra.go.jp (Built-in)
+https://jwpub.org (Built-in)
+https://kaiserpermanente.org (Built-in)
+https://kakao.com (Built-in)
+https://kapitalbank.az (Built-in)
+https://kemdikbud.go.id (Built-in)
+https://kerala.gov.in (Built-in)
+https://klikbca.com (Built-in)
+https://kohls.com (Built-in)
+https://konami.net (Built-in)
+https://kotak.com (Built-in)
+https://kroger.com (Built-in)
+https://kundalik.com (Built-in)
+https://kuronekoyamato.co.jp (Built-in)
+https://kwsp.gov.my (Built-in)
+https://laposte.fr (Built-in)
+https://laposte.net (Built-in)
+https://leboncoin.fr (Built-in)
+https://lego.com (Built-in)
+https://libero.it (Built-in)
+https://librus.pl (Built-in)
+https://licindia.in (Built-in)
+https://lidl.com (Built-in)
+https://lightinthebox.com (Built-in)
+https://line.me (Built-in)
+https://lineru.com (Built-in)
+https://linkedin.com (Built-in)
+https://linktr.ee (Built-in)
+https://littlecaesars.com (Built-in)
+https://live.com (Built-in)
+https://lloydsbank.co.uk (Built-in)
+https://login.gov (Built-in)
+https://loteria.cl (Built-in)
+https://loteriasyapuestas.es (Built-in)
+https://lotteriaswiateczna.pl (Built-in)
+https://lowes.com (Built-in)
+https://macro.com.ar (Built-in)
+https://macys.com (Built-in)
+https://madisoft.it (Built-in)
+https://magazineluiza.com.br (Built-in)
+https://magnit.ru (Built-in)
+https://mahadbtmahait.gov.in (Built-in)
+https://mail.ru (Built-in)
+https://marksandspencer.com (Built-in)
+https://marlboro.com (Built-in)
+https://maybank2u.com.my (Built-in)
+https://mbank.pl (Built-in)
+https://mcdonaldsapps.com (Built-in)
+https://meb.gov.tr (Built-in)
+https://mediafire.com (Built-in)
+https://medu.ir (Built-in)
+https://mega.nz (Built-in)
+https://meliuz.com.br (Built-in)
+https://men.gov.ma (Built-in)
+https://mercadolibre.com.mx (Built-in)
+https://mercadolibre.com (Built-in)
+https://mercadolivre.com.br (Built-in)
+https://mercadolivre.com (Built-in)
+https://mercantilbanco.com (Built-in)
+https://mercantilmovilinternet.com (Built-in)
+https://meritnation.com (Built-in)
+https://messenger.com (Built-in)
+https://metrobyt-mobile.com (Built-in)
+https://meualelo.com.br (Built-in)
+https://mhrs.gov.tr (Built-in)
+https://michigan.gov (Built-in)
+https://microsoftonline.com (Built-in)
+https://midasbuy.com (Built-in)
+https://midatacredito.com (Built-in)
+https://mihoyo.com (Built-in)
+https://millipiyangoonline.com (Built-in)
+https://minecraft.net (Built-in)
+https://mitarjetacencosud.cl (Built-in)
+https://mitelcel.com (Built-in)
+https://moe.gov.jo (Built-in)
+https://moe.gov.sa (Built-in)
+https://moncompteformation.gouv.fr (Built-in)
+https://morrisons.com (Built-in)
+https://mos.ru (Built-in)
+https://mts.ru (Built-in)
+https://mufg.jp (Built-in)
+https://my.gov.au (Built-in)
+https://my.gov.az (Built-in)
+https://myasnb.com.my (Built-in)
+https://mybsn.com.my (Built-in)
+https://myflorida.com (Built-in)
+https://myherbalife.com (Built-in)
+https://myntra.com (Built-in)
+https://mypeopledoc.com (Built-in)
+https://mysynchrony.com (Built-in)
+https://naf.gov.jo (Built-in)
+https://nalog.ru (Built-in)
+https://nascidosparasalvar.com (Built-in)
+https://national-lottery.co.uk (Built-in)
+https://naver.com (Built-in)
+https://navyfederal.org (Built-in)
+https://nbg.gr (Built-in)
+https://nederlandseloterij.nl (Built-in)
+https://nemlog-in.dk (Built-in)
+https://nequi.com.co (Built-in)
+https://nesine.com (Built-in)
+https://nespresso.com (Built-in)
+https://netcombo.com.br (Built-in)
+https://netflix.com (Built-in)
+https://netpnb.com (Built-in)
+https://netshoes.com.br (Built-in)
+https://netspend.com (Built-in)
+https://netteller.com (Built-in)
+https://next.co.uk (Built-in)
+https://nike.com (Built-in)
+https://nintendo.com (Built-in)
+https://nordaccount.com (Built-in)
+https://norton.com (Built-in)
+https://nowtv.com (Built-in)
+https://nubank.com.br (Built-in)
+https://nvidia.com (Built-in)
+https://nvsp.in (Built-in)
+https://nwolb.com (Built-in)
+https://ny.gov (Built-in)
+https://o2.pl (Built-in)
+https://octoclicks.co.id (Built-in)
+https://ods.com.mx (Built-in)
+https://ohio.gov (Built-in)
+https://oi.com.br (Built-in)
+https://ok.ru (Built-in)
+https://olimpbet.kz (Built-in)
+https://olx.com.br (Built-in)
+https://olx.ua (Built-in)
+https://omni7.jp (Built-in)
+https://onet.pl (Built-in)
+https://onlineapplicationform.org (Built-in)
+https://onlinemektep.org (Built-in)
+https://onlinesbi.com (Built-in)
+https://onlinesbi.sbi (Built-in)
+https://orange.fr (Built-in)
+https://oschadbank.ua (Built-in)
+https://osmbusiness.in (Built-in)
+https://osmosetech.com (Built-in)
+https://osmtechno.com (Built-in)
+https://osym.gov.tr (Built-in)
+https://otpbank.hu (Built-in)
+https://otto.de (Built-in)
+https://pa.gov (Built-in)
+https://paisabazaar.com (Built-in)
+https://pajak.go.id (Built-in)
+https://pandora.com (Built-in)
+https://papajohns.com (Built-in)
+https://parimatch.com (Built-in)
+https://pasigcity.gov.ph (Built-in)
+https://patientaccess.com (Built-in)
+https://patreon.com (Built-in)
+https://patria.org.ve (Built-in)
+https://paygonline.com (Built-in)
+https://paypal.com (Built-in)
+https://paysafecard.com (Built-in)
+https://paytm.com (Built-in)
+https://payu.in (Built-in)
+https://pbebank.com (Built-in)
+https://peacocktv.com (Built-in)
+https://pekao24.pl (Built-in)
+https://personare.com.br (Built-in)
+https://pfms.nic.in (Built-in)
+https://pgsharp.com (Built-in)
+https://pichincha.com (Built-in)
+https://pinterest.com (Built-in)
+https://pixiv.net (Built-in)
+https://pizzahut.com (Built-in)
+https://pnbibanking.in (Built-in)
+https://pnc.com (Built-in)
+https://pof.com (Built-in)
+https://pokemon.com (Built-in)
+https://pole-emploi.fr (Built-in)
+https://policia.gov.co (Built-in)
+https://pontoslivelo.com.br (Built-in)
+https://portablenorthpole.com (Built-in)
+https://postbank.de (Built-in)
+https://poste.dz (Built-in)
+https://poste.it (Built-in)
+https://poupatempo.sp.gov.br (Built-in)
+https://prakerja.go.id (Built-in)
+https://premierleague.com (Built-in)
+https://presentedenatalseara.com.br (Built-in)
+https://prismamediosdepago.com (Built-in)
+https://privat24.ua (Built-in)
+https://privatbank.ua (Built-in)
+https://privatter.net (Built-in)
+https://progressive.com (Built-in)
+https://provincial.com (Built-in)
+https://pz.gov.pl (Built-in)
+https://qiwi.com (Built-in)
+https://qvc.com (Built-in)
+https://rajasthan.gov.in (Built-in)
+https://rajshaladarpan.nic.in (Built-in)
+https://rakuten-bank.co.jp (Built-in)
+https://rakuten-card.co.jp (Built-in)
+https://rakuten.co.jp (Built-in)
+https://razer.com (Built-in)
+https://real.de (Built-in)
+https://reclameaqui.com.br (Built-in)
+https://recruit.co.jp (Built-in)
+https://reddit.com (Built-in)
+https://rediff.com (Built-in)
+https://redlink.com.ar (Built-in)
+https://redsys.es (Built-in)
+https://regions.com (Built-in)
+https://registrocivil.cl (Built-in)
+https://reserved.com (Built-in)
+https://rhb.com.my (Built-in)
+https://riachuelo.com.br (Built-in)
+https://ring.com (Built-in)
+https://riotgames.com (Built-in)
+https://ripley.cl (Built-in)
+https://roblox.com (Built-in)
+https://rockstargames.com (Built-in)
+https://roku.com (Built-in)
+https://royalbank.com (Built-in)
+https://runescape.com (Built-in)
+https://rupee4click.com (Built-in)
+https://ruralvia.com (Built-in)
+https://sainsburys.co.uk (Built-in)
+https://saisoncard.co.jp (Built-in)
+https://salud-digna.org (Built-in)
+https://saludtotal.com.co (Built-in)
+https://samsclub.com (Built-in)
+https://samsung.com (Built-in)
+https://santander.cl (Built-in)
+https://santander.co.uk (Built-in)
+https://santander.com.ar (Built-in)
+https://santander.com.br (Built-in)
+https://santander.com.mx (Built-in)
+https://santandermovil.cl (Built-in)
+https://satofull.jp (Built-in)
+https://sberbank.ru (Built-in)
+https://sbicard.com (Built-in)
+https://sbiepay.sbi (Built-in)
+https://sbrf.ru (Built-in)
+https://sc.com (Built-in)
+https://sch.gr (Built-in)
+https://scholarships.gov.in (Built-in)
+https://scotiabank.cl (Built-in)
+https://screwfix.com (Built-in)
+https://seg-social.gob.es (Built-in)
+https://sepe.gob.es (Built-in)
+https://serasa.com.br (Built-in)
+https://serve.com (Built-in)
+https://seznam.cz (Built-in)
+https://sfr.fr (Built-in)
+https://shein.com (Built-in)
+https://shiksha.com (Built-in)
+https://shine.com (Built-in)
+https://shopee.co.id (Built-in)
+https://shutterfly.com (Built-in)
+https://sii.cl (Built-in)
+https://simplepay.hu (Built-in)
+https://singpass.gov.sg (Built-in)
+https://skole.hr (Built-in)
+https://skrill.com (Built-in)
+https://skt-id.co.kr (Built-in)
+https://sky.com (Built-in)
+https://skyroom.online (Built-in)
+https://smartfit.com.br (Built-in)
+https://smbc-card.com (Built-in)
+https://smbc.co.jp (Built-in)
+https://snapchat.com (Built-in)
+https://sodexobeneficios.com.br (Built-in)
+https://sofort.com (Built-in)
+https://softbank.jp (Built-in)
+https://somosbelcorp.com (Built-in)
+https://sony.com (Built-in)
+https://sonyentertainmentnetwork.com (Built-in)
+https://sopadegalinha.com.br (Built-in)
+https://spectrum.net (Built-in)
+https://sportybet.com (Built-in)
+https://spotify.com (Built-in)
+https://sprint.com (Built-in)
+https://square-enix.com (Built-in)
+https://ssa.gov (Built-in)
+https://ssc.gov.jo (Built-in)
+https://ssc.nic.in (Built-in)
+https://sso.go.th (Built-in)
+https://sss.gov.ph (Built-in)
+https://starbucks.com (Built-in)
+https://state.ga.us (Built-in)
+https://state.nj.us (Built-in)
+https://state.or.us (Built-in)
+https://state.tx.us (Built-in)
+https://statefarm.com (Built-in)
+https://steamcommunity.com (Built-in)
+https://steampowered.com (Built-in)
+https://stoloto.ru (Built-in)
+https://stps.gob.mx (Built-in)
+https://straighttalk.com (Built-in)
+https://studentaid.gov (Built-in)
+https://studentsearncash.co (Built-in)
+https://subway.com (Built-in)
+https://successfactors.com (Built-in)
+https://successfactors.eu (Built-in)
+https://sumup.com (Built-in)
+https://superawesome.tv (Built-in)
+https://sura.com (Built-in)
+https://swagbucks.com (Built-in)
+https://syf.com (Built-in)
+https://szn.cz (Built-in)
+https://t-mobile.com (Built-in)
+https://takarakuji-official.jp (Built-in)
+https://takipcimx.com (Built-in)
+https://tamin.ir (Built-in)
+https://target.com (Built-in)
+https://tazoselmachips.com.br (Built-in)
+https://tci.ir (Built-in)
+https://td.com (Built-in)
+https://teachable.com (Built-in)
+https://telekom.com (Built-in)
+https://telesena.com.br (Built-in)
+https://telmex.com (Built-in)
+https://tesco.com (Built-in)
+https://testmoz.com (Built-in)
+https://testservices.nic.in (Built-in)
+https://textnow.com (Built-in)
+https://tigo.com (Built-in)
+https://tiktok.com (Built-in)
+https://tim.com.br (Built-in)
+https://tim.it (Built-in)
+https://tnebnet.org (Built-in)
+https://tnega.org (Built-in)
+https://tonies.com (Built-in)
+https://tpsl-india.in (Built-in)
+https://transbank.cl (Built-in)
+https://transferwise.com (Built-in)
+https://trendyol.com (Built-in)
+https://tumblr.com (Built-in)
+https://turkiye.gov.tr (Built-in)
+https://turktelekom.com.tr (Built-in)
+https://twitch.tv (Built-in)
+https://twitter.com (Built-in)
+https://uber.com (Built-in)
+https://ubisoft.com (Built-in)
+https://uchi.ru (Built-in)
+https://udemy.com (Built-in)
+https://uimn.org (Built-in)
+https://ukr.net (Built-in)
+https://ulta.com (Built-in)
+https://ultipro.com (Built-in)
+https://unionbankonline.co.in (Built-in)
+https://uniqlo.com (Built-in)
+https://universal-credit.service.gov.uk (Built-in)
+https://uol.com.br (Built-in)
+https://up.gov.in (Built-in)
+https://ups.com (Built-in)
+https://upstox.com (Built-in)
+https://usaa.com (Built-in)
+https://usbank.com (Built-in)
+https://usbankreliacard.com (Built-in)
+https://usps.com (Built-in)
+https://vagas.com.br (Built-in)
+https://vanillagift.com (Built-in)
+https://veikkaus.fi (Built-in)
+https://verizon.com (Built-in)
+https://verizonwireless.com (Built-in)
+https://very.co.uk (Built-in)
+https://vestibulinhoetec.com.br (Built-in)
+https://victoriassecret.com (Built-in)
+https://vimeo.com (Built-in)
+https://virginmedia.com (Built-in)
+https://vk.com (Built-in)
+https://vnedu.vn (Built-in)
+https://vorwerk.com (Built-in)
+https://vudu.com (Built-in)
+https://vulcan.net.pl (Built-in)
+https://wal-mart.com (Built-in)
+https://walgreens.com (Built-in)
+https://walmart.com.mx (Built-in)
+https://walmart.com (Built-in)
+https://walmartgift.com (Built-in)
+https://wargaming.net (Built-in)
+https://wattpad.com (Built-in)
+https://wayfair.com (Built-in)
+https://web.de (Built-in)
+https://webpostegro.com (Built-in)
+https://wellsfargo.com (Built-in)
+https://westernunion.com (Built-in)
+https://weverse.io (Built-in)
+https://wheeloffortune.com (Built-in)
+https://wifi.id (Built-in)
+https://winbank.gr (Built-in)
+https://wirecard.com (Built-in)
+https://wish.com (Built-in)
+https://wizardingworld.com (Built-in)
+https://wp.pl (Built-in)
+https://xfinity.com (Built-in)
+https://xflag.com (Built-in)
+https://xiaomi.com (Built-in)
+https://yahoo.co.jp (Built-in)
+https://yahoo.com (Built-in)
+https://yandex.ru (Built-in)
+https://yesbank.co.in (Built-in)
+https://yesburse.com (Built-in)
+https://yodobashi.com (Built-in)
+https://yonobusiness.sbi (Built-in)
+https://yoomoney.ru (Built-in)
+https://zalando.de (Built-in)
+https://zara.com (Built-in)
+https://zerodha.com (Built-in)
+https://ziraatbank.com.tr (Built-in)
+https://zoom.us (Built-in)
+# This is a basic workflow to help you get started with Actions
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Omnibox Debug Page</title>
+  <link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
+  <link rel="stylesheet" href="omnibox.css">
+  <script type="module" src="omnibox.js"></script>
+</head>
+
+<body>
+  <template id="omnibox-input-template">
+    <link rel="stylesheet" href="omnibox_input.css">
+    <div class="top">
+      <div class="top-column">
+        <input id="input-text" type="text"
+               class="row input-icon-container search-icon" accesskey="l"
+               autofocus autocomplete="off"
+               placeholder="Enter omnibox input [Alt+L]">
+        <div class="arrow-container">
+          <span id="arrow-padding"></span>
+          <span class="arrow-up">▲</span>
+        </div>
+        <label class="row checkbox-container"
+               title="When checked, interacting with the real omnibox of any browser window will update the debug page's output. Incognito window omnibox results will update only debug pages open in incognito windows. Likewise, normal window omnibox results will update only debug pages open in normal windows. When unfocusing the browser omnibox, the autocomplete controller sends a response with no combined results. This response is ignored in order to prevent the previous non-empty response from being hidden and because these results wouldn't normally be displayed by the browser window omnibox.">
+            <input id="connect-window-omnibox" type="checkbox" accesskey="w">
+            <span>
+              Connect <span class="accesskey">w</span>indow omnibox
+            </span>
+          </label>
+        <div class="row response-selection-container">
+          <span>Quer<span class="accesskey">y</span></span>
+          <input id="response-selection" type="number" accesskey="y" value="0"
+                 min="0" max="0">
+          <span>of <span id="responses-count">0</span></span>
+        </div>
+        <span id="history-warning" class="row warning-text"
+              title="The output you are currently viewing is historical and may not reflect the current inputs."
+              hidden>
+            Viewing historical data
+          </span>
+      </div>
+
+      <div class="top-column">
+        <p class="row section-header">Input parameters</p>
+        <label class="row checkbox-container">
+            <input id="reset-autocomplete-controller" type="checkbox"
+                   accesskey="r">
+            <span>
+              <span class="accesskey">R</span>eset autocomplete controller
+            </span>
+          </label>
+        <label class="row checkbox-container">
+            <input id="lock-cursor-position" type="checkbox" accesskey="x">
+            <span>
+              Lock cursor position to end of input
+              [<span class="accesskey">x</span>]
+            </span>
+          </label>
+        <label class="row checkbox-container">
+            <input id="zero-suggest" type="checkbox" accesskey="z">
+            <span>
+              <span class="accesskey">Z</span>ero suggest
+            </span>
+          </label>
+        <label class="row checkbox-container">
+            <input id="prevent-inline-autocomplete" type="checkbox"
+                   accesskey="a">
+            <span>
+              Prevent inline <span class="accesskey">a</span>utocomplete
+            </span>
+          </label>
+        <label class="row checkbox-container">
+            <input id="prefer-keyword" type="checkbox" accesskey="k">
+            <span>
+              In <span class="accesskey">k</span>eyword mode
+            </span>
+          </label>
+      </div>
+
+      <div class="top-column">
+        <p class="row section-header">
+          Current page c<span class="accesskey">o</span>ntext:
+        </p>
+        <input id="current-url" type="text" class="row" accesskey="u"
+               placeholder="Enter current url (e.g. 'https://www.google.com') [Alt+U]"
+               title="Mostly useful when zero-suggest is enabled, but may also affect clipboard and search providers.">
+        <select id="page-classification" class="row" accesskey="o">
+          <option value="0">Invalid spec</option>
+          <option value="1">(OBSOLETE) new tab page</option>
+          <option value="2">about:blank</option>
+          <option value="3">user's home page</option>
+          <option value="4" selected>arbitrary URL</option>
+          <option value="6">
+            search result page doing search term replacement
+          </option>
+          <option value="7">new tab page omnibox</option>
+          <option value="8">new tab page fakebox</option>
+          <option value="9">
+            search result page not doing search term replacement
+          </option>
+          <option value="15">new tab page realbox</option>
+          <option value="16">search widget (Android)</option>
+          <option value="19">quick action search widget (Android)</option>
+        </select>
+      </div>
+
+      <div class="top-column">
+        <p class="row section-header">Display paramters</p>
+        <label class="row checkbox-container">
+            <input id="show-incomplete-results" type="checkbox" accesskey="i">
+            <span>
+              Show <span class="accesskey">i</span>ncomplete results
+            </span>
+          </label>
+        <label class="row checkbox-container">
+            <input id="show-details" type="checkbox" accesskey="t">
+            <span>
+              Show all de<span class="accesskey">t</span>ails
+            </span>
+          </label>
+        <label class="row checkbox-container">
+            <input id="show-all-providers" type="checkbox" accesskey="p">
+            <span>
+              Show results per <span class="accesskey">p</span>rovider
+            </span>
+          </label>
+        <div class="column-container">
+          <div class="column">
+            <label class="row checkbox-container">
+              <input id="elide-cells" type="checkbox" accesskey="s">
+              <span>
+                Elide cell<span class="accesskey">s</span>
+              </span>
+            </label>
+          </div>
+          <div class="column">
+            <label class="row checkbox-container">
+              <input id="thin-rows" type="checkbox" accesskey="h">
+              <span>
+                T<span class="accesskey">h</span>in rows
+              </span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="top-column">
+        <p class="row section-header">Output controls</p>
+        <input id="filter-text" type="text"
+               class="row input-icon-container search-icon" accesskey="g"
+               autocomplete="off"
+               placeholder="Enter filter (e.g. 'google', 'is:star', 'not:del') [Alt+G]"
+               title="Checks each cell individually; i.e. filter text should not span multiple columns. Supports fuzzyness; each character of filter text must be present in the cell, either adjacent to the previous matched character, or at the start of a new word. Words are defined as being delimited by either capital letters, groups of digits, or non alpha characters. E.g. 'abc' matches 'abc', 'a big cat', 'a-bigCat', 'a very big cat', and 'an amBer cat'; but does not match 'abigcat' or 'an amber cat'. 'green rainbow' is matched by 'gre rain', but not by 'gre bow'. One exception is the first character, which may be matched mid-word. E.g. 'een rain' can also match 'green rainbow'. Boolean properties can be searched for via the property name prefixed by 'is:' or 'not:'. Boolean property names are: 'Can Be Default', 'Starred', 'Has Tab Match', 'Del', 'Prev', and 'Done'.">
+        <div class="column-container">
+          <div class="column">
+            <span id="export-clipboard" class="row button" accesskey="c"
+                  tabindex="0"
+                  title="Copy responses in JSON format. This is not affected by the visibility of output and will include responses in their entirety as well as query and display inputs.">
+              <i class="icon copy-icon"></i>
+              <span><span class="accesskey">C</span>opy</span>
+            </span>
+            <span id="export-file" class="row button" accesskey="n" tabindex="0"
+                  title="Download responses in JSON format. This is not affected by the visibility of output and will include responses in their entirety as well as query and display inputs.">
+              <i class="icon copy-icon"></i>
+              <span>Dow<span class="accesskey">n</span>load</span>
+            </span>
+          </div>
+          <div class="column">
+              <label id="import-clipboard"
+                     class="row icon-button button drag-container" accesskey="v"
+                     tabindex="0"
+                     title="Import JSON from clipboard. Accepts dragged text and files as well.">
+                  <i class="icon copy-icon"></i>
+                  <span>Paste [<span class="accesskey">v</span>]</span>
+              </label>
+              <label id="import-file"
+                     class="row icon-button button drag-container" accesskey="m"
+                     tabindex="0"
+                     title="Upload previously downloaded responses to load them. Accepts dragged text and files as well.">
+                  <input id="import-file-input" type="file" accept=".json">
+                  <i class="icon copy-icon"></i>
+                  <span>Upload [<span class="accesskey">m</span>]</span>
+              </label>
+              <label id="process-batch"
+                     class="row icon-button button drag-container" accesskey="b"
+                     tabindex="0"
+                     title="Upload a query batch specifier to download a batch export. Accepts dragged text and files as well.">
+                  <input id="process-batch-input" type="file" accept=".json">
+                  <i class="icon copy-icon"></i>
+                  <span>Process <span class="accesskey">b</span>atch</span>
+              </label>
+          </div>
+        </div>
+        <span id="imported-warning" class="row warning-text"
+              title="The output you are currently viewing is imported and may not be the same as if you had entered these inputs now."
+              hidden>
+            Viewing imported data
+          </span>
+      </div>
+    </div>
+  </template>
+
+  <template id="omnibox-output-template">
+    <style>
+      [hidden] {
+        display: none !important;
+      }
+
+      :host {
+        font-size: .75rem;
+      }
+
+      @media only screen and (min-height: 900px) {
+        :host {
+          flex-grow: 1;
+          overflow-y: scroll;
+        }
+      }
+
+      output-results-group:not(:last-child) {
+        margin-bottom: 30px;
+      }
+    </style>
+    <div id="contents"></div>
+  </template>
+
+  <template id="output-results-group-template">
+    <link rel="stylesheet" href="output_results_group.css">
+    <output-results-details></output-results-details>
+    <table id="table"></table>
+  </template>
+
+  <template id="output-results-details-template">
+    <style>
+      :host {
+        background-color: white;
+        border: 1px solid var(--border-color);
+        display: block;
+        padding: 5px;
+      }
+
+      .label {
+        color: var(--header-color);
+        margin-inline-end: 30px;
+      }
+
+      .label > span {
+        color: var(--action-color);
+        font-weight: bold;
+      }
+    </style>
+    <span class="label">
+      cursor position = <span id="cursor-position"></span>
+    </span>
+    <span class="label">
+      elapsed time = <span><span id="time"></span>ms</span>
+    </span>
+    <span class="label">
+      all providers done = <span id="done"></span>
+    </span>
+    <span class="label">type = <span id="type"></span></span>
+    <span class="label">host = <span id="host"></span></span>
+    <span class="label">is typed host = <span id="is-typed-host"></span></span>
+  </template>
+
+  <omnibox-input id="omnibox-input"></omnibox-input>
+  <omnibox-output id="omnibox-output"></omnibox-output>
+</body>
+</html>
+<!doctype html>
+<html dir="ltr" lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>GCM Internals</title>
+  <if expr="is_android">
+    <meta name="viewport" content="width=device-width">
+  </if>
+  <link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
+  <link rel="stylesheet" href="gcm_internals.css">
+  <script type="module" src="gcm_internals.js"></script>
+</head>
+<body>
+<h1>GCM Internals</h1>
+<div class="flexbar">
+  <button id="refresh">Refresh</button>
+  <button id="recording">Start Recording</button>
+  <button id="clear-logs">Clear All Logs</button>
+</div>
+
+<h2>Device Info</h2>
+<table id="device-info">
+  <tbody>
+    <if expr="not is_android">
+      <tr>
+        <td>
+          Android Id
+        </td>
+        <td>
+          <span id="android-id"></span>
+          <span id="android-secret-container" class="invisible">
+            (<b>secret</b>: <span id="android-secret"></span>)
+          </span>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          User Profile Service Created
+        </td>
+        <td id="profile-service-created">
+        </td>
+      </tr>
+    </if>
+    <tr>
+      <td>
+        GCM Enabled
+      </td>
+      <td id="gcm-enabled">
+      </td>
+    </tr>
+    <if expr="not is_android">
+      <tr>
+        <td>
+          GCM Client Created
+        </td>
+        <td id="gcm-client-created">
+        </td>
+      </tr>
+      <tr>
+        <td>
+          GCM Client State
+        </td>
+        <td id="gcm-client-state">
+        </td>
+      </tr>
+      <tr>
+        <td>
+          Connection Client Created
+        </td>
+        <td id="connection-client-created">
+        </td>
+      </tr>
+      <tr>
+        <td>
+          Connection State
+        </td>
+        <td id="connection-state">
+        </td>
+      </tr>
+      <tr>
+        <td>
+          Last Checkin
+        </td>
+        <td id="last-checkin">
+        </td>
+      </tr>
+      <tr>
+        <td>
+          Next Checkin
+        </td>
+        <td id="next-checkin">
+        </td>
+      </tr>
+      <tr>
+        <td>
+          Registered App Ids
+        </td>
+        <td id="registered-app-ids">
+        </td>
+      </tr>
+      <tr>
+        <td>
+          Send Message Queue Size
+        </td>
+        <td id="send-queue-size">
+        </td>
+      </tr>
+      <tr>
+        <td>
+          Resend Message Queue Size
+        </td>
+        <td id="resend-queue-size">
+        </td>
+      </tr>
+    </if>
+  </tbody>
+</table>
+
+<if expr="not is_android">
+  <h2>Check-in Log</h2>
+  <table class="log-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Event</th>
+        <th>Details</th>
+      </tr>
+    </thead>
+    <tbody id="checkin-info">
+    </tbody>
+  </table>
+
+  <h2>Connection Log</h2>
+  <table class="log-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Event</th>
+        <th>Details</th>
+      </tr>
+    </thead>
+    <tbody id="connection-info">
+    </tbody>
+  </table>
+</if>
+
+<h2>Registration Log</h2>
+<table class="log-table">
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>App Id</th>
+      <th>Source</th>
+      <th>Event</th>
+      <th>Details</th>
+    </tr>
+  </thead>
+  <tbody id="registration-info">
+  </tbody>
+</table>
+
+<h2>Receive Message Log</h2>
+<table class="log-table">
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>App Id</th>
+      <th>From</th>
+      <th>Size (bytes)</th>
+      <th>Event</th>
+      <th>Details</th>
+    </tr>
+  </thead>
+  <tbody id="receive-info">
+  </tbody>
+</table>
+
+<h2>Message Decryption Failure Log</h2>
+<table class="log-table">
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>App Id</th>
+      <th>Details</th>
+    </tr>
+  </thead>
+  <tbody id="decryption-failure-info">
+  </tbody>
+</table>
+
+<if expr="not is_android">
+  <h2>Send Message Log</h2>
+  <table class="log-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>App Id</th>
+        <th>Receiver Id</th>
+        <th>Msg Id</th>
+        <th>Event</th>
+        <th>Details</th>
+      </tr>
+    </thead>
+    <tbody id="send-info">
+    </tbody>
+  </table>
+</if>
+
+</body>
+</html><!DOCTYPE html>
+<html dir="ltr" lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title id="device-log-title">Nháº­t kĂ½ thiáº¿t bá»‹</title>
+  <link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
+  <link rel="stylesheet" href="device_log_ui.css">
+  <script type="module" src="device_log_ui.js"></script>
+</head>
+<body>
+  <div id="header">
+    <span>ThĂªm thĂ´ng sá»‘ truy váº¥n trong URL Ä‘á»ƒ tá»± Ä‘á»™ng lĂ m má»›i trang: chrome://device-log/?refresh=&lt;sec&gt;</span>
+  </div>
+  <div>
+    <button id="log-refresh">LĂ m má»›i</button>
+    <button id="log-clear">XĂ³a</button>
+    <span>Cáº¥p Ä‘á»™ nháº­t kĂ½:</span>
+    <select id="log-level-select">
+      <option value="Error">Lá»—i</option>
+      <option value="User">NgÆ°Æ¡̀€i dù€ng</option>
+      <option value="Event">Sá»± kiá»‡n</option>
+      <option value="Debug">Gá»¡ lá»—i</option>
+    </select>
+    <label>
+      <input id="log-fileinfo" type="checkbox">
+      <span>ThĂ´ng tin tá»‡p</span>
+    </label>
+    <label>
+      <input id="log-timedetail" type="checkbox">
+      <span>Dáº¥u thá»i gian chi tiáº¿t</span>
+    </label>
+  </div>
+
+  <div id="log-checkbox-container">
+    <button id="log-clear-types">XĂ³a cĂ¡c loáº¡i thiáº¿t bá»‹</button>
+    <label>
+      <input id="log-type-login" type="checkbox">
+      <span>ÄÄƒng nháº­p</span>
+    </label>
+    <label>
+      <input id="log-type-network" type="checkbox">
+      <span>Máº¡ng</span>
+    </label>
+    <label>
+      <input id="log-type-power" type="checkbox">
+      <span>Nguá»“n</span>
+    </label>
+    <label>
+      <input id="log-type-bluetooth" type="checkbox">
+      <span>Bluetooth</span>
+    </label>
+    <label>
+      <input id="log-type-usb" type="checkbox">
+      <span>USB</span>
+    </label>
+    <label>
+      <input id="log-type-hid" type="checkbox">
+      <span>HID</span>
+    </label>
+    <label>
+      <input id="log-type-printer" type="checkbox">
+      <span>MĂ¡y in</span>
+    </label>
+    <label>
+      <input id="log-type-fido" type="checkbox">
+      <span>FIDO</span>
+    </label>
+    <label>
+      <input id="log-type-serial" type="checkbox">
+      <span>SĂª-ri</span>
+    </label>
+    <label>
+      <input id="log-type-camera" type="checkbox">
+      <span>MĂ¡y áº£nh</span>
+    </label>
+  </div>
+  <div id="log-container"></div>
+</body>
+</html>
+<!--
+Copyright 2015 The Chromium Authors
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Family Link User Internals</title>
+<link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
+<link rel="stylesheet" href="chrome://resources/css/list.css">
+<link rel="stylesheet" href="family_link_user_internals.css">
+</head>
+
+<body>
+<div id='info'>
+  <div id='basic-info' class="section" jsselect="sections">
+    <h2 jscontent="title"></h2>
+    <table class="section-details">
+      <tr jsselect="data"
+            jsvalues="class:$this.is_valid ? '' : 'uninitialized'"
+            jseval='highlightIfChanged(
+                this, this.children[1].innerText, stat_value)'>
+        <td class="detail" jscontent="stat_name" width=50%></td>
+        <td class="value" jscontent="stat_value" width=50%></td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="section" jsskip="true">
+    <h2>Try a URL</h2>
+    <form id="try-url">
+      <input id="try-url-input" type="text">
+    </form>
+    <table class="section-details">
+      <tr>
+        <td class="detail">Result</td>
+        <td id="try-url-result" class="value"></td>
+      </tr>
+      <tr>
+        <td class="detail">Manually allowlisted</td>
+        <td id="manual-allowlist" class="value"></td>
+      </tr>
+    </table>
+  </div>
+
+  <div id='user-settings' class="section">
+    <h2>Family Link User Settings</h2>
+    <table class="section-details">
+      <tr jsselect="settings">
+        <td jscontent="key"></td>
+        <td><pre jscontent="value"></pre></td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="section" id="filtering-results-container-wrapper" jsskip="true">
+    <h2>Filtering Results</h2>
+    <div id="filtering-results-container">
+      <div class="filtering-results-entry" jsselect="results">
+        <div class="url" jscontent="url"></div>
+        <span class="result" jscontent="result"></span>
+        <span class="reason" jscontent="reason"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="family_link_user_internals.js"></script>
+</body>
+</html>
+CreditsPrint
+2-dim General Purpose FFT (Fast Fourier/Cosine/Sine Transform) Packagehomepage
+@puppeteer/replayhomepage
+Abseilhomepage
+Abseilhomepage
+abslhomepage
+Accessibility Audit library, from Accessibility Developer Toolshomepage
+Acorn, a tiny, fast JavaScript parser written in JavaScript.homepage
+Acorn-loosehomepage
+Activityhomepage
+Activity Kotlin Extensionshomepage
+Alliance for Open Media Video Codechomepage
+Almost Native Graphics Layer Enginehomepage
+American Fuzzy Lophomepage
+Androidhomepage
+Android App Startup Runtimehomepage
+Android AppCompat Libraryhomepage
+Android AppCompat Library v7homepage
+Android Arch-Commonhomepage
+Android Arch-Commonhomepage
+Android Arch-Runtimehomepage
+Android Arch-Runtimehomepage
+Android ConstraintLayouthomepage
+Android ConstraintLayout Corehomepage
+Android Crazy Linkerhomepage
+Android DBhomepage
+Android Emoji Compathomepage
+Android Emoji2 Compathomepage
+Android Emoji2 Compat view helpershomepage
+Android Explicit Synchronizationhomepage
+Android FloatPropertyhomepage
+Android Lifecycle Kotlin Extensionshomepage
+Android Lifecycle LiveDatahomepage
+Android Lifecycle LiveDatahomepage
+Android Lifecycle LiveData Corehomepage
+Android Lifecycle LiveData Corehomepage
+Android Lifecycle Processhomepage
+Android Lifecycle Runtimehomepage
+Android Lifecycle Runtimehomepage
+Android Lifecycle Servicehomepage
+Android Lifecycle ViewModelhomepage
+Android Lifecycle ViewModelhomepage
+Android Lifecycle ViewModel Kotlin Extensionshomepage
+Android Lifecycle ViewModel with SavedStatehomepage
+Android Lifecycle-Commonhomepage
+Android Lifecycle-Commonhomepage
+Android Lifecycle-Common for Java 8 Languagehomepage
+Android Lifecycle-Common for Java 8 Languagehomepage
+Android MediaRouter Support Libraryhomepage
+Android Multi-Dex Libraryhomepage
+Android Multi-Dex Libraryhomepage
+Android NDKhomepage
+Android Open Source Project - App Compat Libraryhomepage
+Android Resource Inspection - Annotationshomepage
+Android Resources Libraryhomepage
+Android Room-Commonhomepage
+Android Room-Runtimehomepage
+Android SDKhomepage
+Android SDKhomepage
+Android SDK and NDKhomepage
+Android SDK and NDKhomepage
+Android SDK and NDKhomepage
+Android SDK and NDKhomepage
+Android SDK and NDKhomepage
+Android SDK and NDKhomepage
+Android SDK and NDKhomepage
+Android SDK and NDKhomepage
+Android SDK and NDKhomepage
+Android Support AnimatedVectorDrawablehomepage
+Android Support AnimatedVectorDrawablehomepage
+Android Support Animationhomepage
+Android Support CardViewhomepage
+Android Support CardView v7homepage
+Android Support Custom Tabshomepage
+Android Support DynamicAnimationhomepage
+Android Support ExifInterfacehomepage
+Android Support Grid Layouthomepage
+Android Support Leanback v17homepage
+Android Support Library Annotationshomepage
+Android Support Library Annotationshomepage
+Android Support Library Async Layout Inflaterhomepage
+Android Support Library Async Layout Inflaterhomepage
+Android Support Library collectionshomepage
+Android Support Library collectionshomepage
+Android Support Library compathomepage
+Android Support Library compathomepage
+Android Support Library Coordinator Layouthomepage
+Android Support Library Coordinator Layouthomepage
+Android Support Library core UIhomepage
+Android Support Library core utilshomepage
+Android Support Library Cursor Adapterhomepage
+Android Support Library Cursor Adapterhomepage
+Android Support Library Custom Viewhomepage
+Android Support Library Custom Viewhomepage
+Android Support Library Custom Viewhomepage
+Android Support Library Document Filehomepage
+Android Support Library Document Filehomepage
+Android Support Library Drawer Layouthomepage
+Android Support Library Drawer Layouthomepage
+Android Support Library fragmenthomepage
+Android Support Library fragmenthomepage
+Android Support Library Interpolatorshomepage
+Android Support Library Interpolatorshomepage
+Android Support Library loaderhomepage
+Android Support Library loaderhomepage
+Android Support Library Local Broadcast Managerhomepage
+Android Support Library media compathomepage
+Android Support Library media compathomepage
+Android Support Library Printhomepage
+Android Support Library Printhomepage
+Android Support Library Sliding Pane Layouthomepage
+Android Support Library Sliding Pane Layouthomepage
+Android Support Library v4homepage
+Android Support Library View Pagerhomepage
+Android Support Library View Pagerhomepage
+Android Support Palettehomepage
+Android Support RecyclerViewhomepage
+Android Support RecyclerView v7homepage
+Android Support SQLite - Framework Implementationhomepage
+Android Support TV Providerhomepage
+Android Support VectorDrawablehomepage
+Android Support VectorDrawablehomepage
+Android System SDKhomepage
+Android Tracinghomepage
+Android Transition Support Libraryhomepage
+Android Transition Support Libraryhomepage
+Android WorkManager Runtimehomepage
+android_annotationshomepage
+AndroidX Futureshomepage
+AndroidX Leanback Gridhomepage
+AndroidX Leanback Preferencehomepage
+AndroidX Preferencehomepage
+AndroidX Widget ViewPager2homepage
+androidx.customview:poolingcontainerhomepage
+androidx_testhomepage
+Animal Snifferhomepage
+Animal Sniffer Annotationshomepage
+animal_snifferhomepage
+AOSP rastermillhomepage
+apache_commons_codechomepage
+apksighomepage
+ARCore SDKhomepage
+ARCore SDK client library for Chromehomepage
+ARM_NEON_2_x86_SSEhomepage
+auth_kithomepage
+autohomepage
+auto_value_gsonhomepage
+AutoTransienthomepage
+AXE-CORE Accessibility Audithomepage
+bazelhomepage
+Biometrichomepage
+Blackmagic DeckLink SDK - Machomepage
+blink HTMLTokenizerhomepage
+BoringSSLhomepage
+Braille Translation Libraryhomepage
+Breakpad, An open-source multi-platform crash reporting systemhomepage
+Brotlihomepage
+BSDiffhomepage
+bsdiffhomepage
+bspatchhomepage
+C++ port of zxcvbn, an advanced password strength estimation library.homepage
+caffeinehomepage
+CastCore Publicshomepage
+Checker Framework Annotationshomepage
+Checker Framework utilitieshomepage
+Checker Qualhomepage
+checker_framework_annotationshomepage
+chrome_password_managerhomepage
+chrome_synchomepage
+ChromeVoxhomepage
+Chromium OS system APIhomepage
+CityHashhomepage
+Closure compilerhomepage
+Cocoa extension code from Caminohomepage
+CodeMirror 5homepage
+CodeMirror 6homepage
+Collections Kotlin Extensionshomepage
+com.google.common, including Guavahomepage
+Common utilities for sliceshomepage
+Compact Encoding Detectionhomepage
+Compact Language Detector v3homepage
+corehomepage
+Core Kotlin Extensionshomepage
+cpuinfohomepage
+Crashpadhomepage
+CRC32Chomepage
+Crubit: C++/Rust Bidirectional Interop Toolhomepage
+d3homepage
+D8 configuration to desugar desugar_jdk_libshomepage
+Daggerhomepage
+Daggerhomepage
+Darwinhomepage
+dav1d is an AV1 decoder :)homepage
+Dawnhomepage
+Devtools-Frontendhomepage
+discover_lithohomepage
+discover_staggered_layouthomepage
+divsufsorthomepage
+djinnihomepage
+djinni_support_libhomepage
+dom-distiller-jshomepage
+dynamic annotationshomepage
+EasyListhomepage
+Eigenhomepage
+Emoji Segmenterhomepage
+emoji-metadatahomepage
+Encodershomepage
+Error Pronehomepage
+error-prone annotationshomepage
+error_pronehomepage
+etc1homepage
+Expat XML Parserhomepage
+Experimental annotationhomepage
+FarmHashhomepage
+fdlibmhomepage
+ffmpeghomepage
+Fiat-Crypto: Synthesizing Correct-by-Construction Code for Cryptographic Primitiveshomepage
+FideltyFX Single Pass Downsamplerhomepage
+FindBugs-jsr305homepage
+firebase-annotationshomepage
+firebase-commonhomepage
+firebase-componentshomepage
+firebase-encodershomepage
+firebase-encoders-jsonhomepage
+firebase-iidhomepage
+firebase-iid-interophomepage
+firebase-installationshomepage
+firebase-installations-interophomepage
+firebase-measurement-connectorhomepage
+firebase-messaginghomepage
+flachomepage
+FlatBuffershomepage
+FlatBuffershomepage
+flatbuffershomepage
+FlatBuffers Java APIhomepage
+flexhomepage
+Floggerhomepage
+fontconfighomepage
+FP16homepage
+Fragment Kotlin Extensionshomepage
+FreeTypehomepage
+Fuse.jshomepage
+FXDivhomepage
+gemmlowphomepage
+GifPlayer Animated GIF Libraryhomepage
+GLhomepage
+Glidehomepage
+glidehomepage
+glmhomepage
+gluhomepage
+Google Autohomepage
+Google Chrome Content Analysis Connector Agent SDKhomepage
+Google Closure Libraryhomepage
+Google Double Conversionhomepage
+Google Input Toolshomepage
+Google Toolbox for Machomepage
+Google Trust Services Recommended Rootshomepage
+google-glog's symbolization libraryhomepage
+google-http-java-clienthomepage
+google-jstemplatehomepage
+google_java_formathomepage
+grpchomepage
+grpchomepage
+gRPC Javahomepage
+GSFhomepage
+gsonhomepage
+Guava for Androidhomepage
+Guava InternalFutureFailureAccess and InternalFutureshomepage
+Guava JDK5homepage
+Guava JDK7homepage
+Guava ListenableFuture onlyhomepage
+Guava: Google Core Libraries for Javahomepage
+GVR Android SDKhomepage
+GVR Keyboardhomepage
+GWT JSInterop Annotationshomepage
+harfbuzz-nghomepage
+Headers for the Windows 10 WebAuthn API (webauthn.dll)homepage
+Highway: C++ library for SIMDhomepage
+highwayhashhomepage
+hunspellhomepage
+hyphenation-patternshomepage
+IAccessible2 COM interfaces for accessibilityhomepage
+iccjpeghomepage
+icuhomepage
+icuhomepage
+ICU4Chomepage
+immerhomepage
+Implementation of WebDriver BiDi standardhomepage
+incaphomepage
+inspector protocolhomepage
+Instrumentation Java Library (OpenCensus)homepage
+IntelliJ IDEA Annotationshomepage
+International Phone Number Libraryhomepage
+intl-messageformathomepage
+ipczhomepage
+ISimpleDOM COM interfaces for accessibilityhomepage
+J2ObjChomepage
+J2ObjChomepage
+J2ObjC Annotationshomepage
+Jackson2homepage
+javapoethomepage
+javax.injecthomepage
+Jetpack WindowManager library Extensionshomepage
+Jetpack WindowManager library Sidecarhomepage
+Jinja2 Python Template Enginehomepage
+jni-wrapperhomepage
+JPEG XL image decoder libraryhomepage
+JsInterop Annotationshomepage
+JsInterop Annotationshomepage
+jsoncpphomepage
+jsoncpphomepage
+JSpecify annotationshomepage
+JSR 250homepage
+JSR 250 Annotations API library from Geronimo.homepage
+JSR 305homepage
+JSR 330homepage
+JSR305-v3.0.2homepage
+jsr330_injecthomepage
+Khronos header fileshomepage
+Khronos reference front-end for GLSL and ESSLhomepage
+Khronos Vulkan Tools Componentshomepage
+Khronos Vulkan Validation Layers Componentshomepage
+kotlinhomepage
+Kotlin Stdlibhomepage
+Kotlin Stdlib Commonhomepage
+Kotlin Stdlib Jdk7homepage
+Kotlin Stdlib Jdk8homepage
+kotlin-symbol-processinghomepage
+kotlinpoethomepage
+Kotlinx Atomicfuhomepage
+Kotlinx Coroutineshomepage
+kotlinx-coroutines-androidhomepage
+kotlinx-coroutines-corehomepage
+kotlinx_metadata_jvmhomepage
+LCOV - the LTP GCOV extensionhomepage
+LevelDB: A Fast Persistent Key-Value Storehomepage
+libaddressinputhomepage
+libavif - Library for encoding and decoding .avif fileshomepage
+libbrlapihomepage
+libcxxhomepage
+libcxxabihomepage
+libeventhomepage
+libFuzzerhomepage
+libgav1homepage
+libgif codec for Skiahomepage
+libipphomepage
+libjingle XMPP and xmllite librarieshomepage
+libjpeg-turbohomepage
+libpnghomepage
+libprotobuf-mutatorhomepage
+libsecrethomepage
+libsrtphomepage
+libudevhomepage
+libunwindhomepage
+libunwindstackhomepage
+libusbxhomepage
+libutfhomepage
+libvpxhomepage
+libx11homepage
+libxcb-keysymshomepage
+libxmlhomepage
+libxslthomepage
+libyuvhomepage
+libziphomepage
+Lighthousehomepage
+Lighthouse i18n.jshomepage
+linux-syscall-supporthomepage
+Lit-HTMLhomepage
+Lithohomepage
+lithohomepage
+LiveData Core Kotlin Extensionshomepage
+logilabhomepage
+Lottiehomepage
+lottiehomepage
+Lottie Webhomepage
+LZMA SDKhomepage
+MalDocA source for extracting and analyzing features from Office documents.homepage
+Markedhomepage
+Material Components for Androidhomepage
+Material Components for Androidhomepage
+Material Components for Androidhomepage
+Material Components for iOShomepage
+Material Design Iconshomepage
+Material Font Disk Loader iOShomepage
+Material Internationalization for iOShomepage
+Material Roboto Font Loader iOShomepage
+Material Sprited Animation Viewhomepage
+Material Text Accessibility iOShomepage
+Material Web Componentshomepage
+MediaController Android sample.homepage
+MediaStoreUtils Android sample.homepage
+mesa_headershomepage
+Metrics Protoshomepage
+minigbmhomepage
+Mobile Data Downloadhomepage
+mobstorehomepage
+modp base64 decoderhomepage
+Motion Animator for Objective-Chomepage
+Motion Interchange for Objective-Chomepage
+Motion Transitioning for Objective-Chomepage
+Mozilla Personal Security Managerhomepage
+Mozilla Windows Cert codehomepage
+Nano Protocol Buffershomepage
+nanoprotohomepage
+native clienthomepage
+Nearby Connections Libraryhomepage
+Netscape Portable Runtime (NSPR)homepage
+Netwide Assemblerhomepage
+Network Security Services (NSS)homepage
+newlib-extrashomepage
+nmoinvaz/miniziphomepage
+Okiohomepage
+okiohomepage
+Omnibox Protoshomepage
+One Euro Filterhomepage
+Open Screen Protocol Libraryhomepage
+openctmhomepage
+OpenH264homepage
+opushomepage
+OTS (OpenType Sanitizer)homepage
+Paul Hsieh's SuperFastHashhomepage
+PDFiumhomepage
+Perfettohomepage
+perfmarkhomepage
+PerfMark libraryhomepage
+PFFFT: a pretty fast FFT.homepage
+play-services-authhomepage
+play-services-auth-api-phonehomepage
+play-services-auth-basehomepage
+play-services-basehomepage
+play-services-basementhomepage
+play-services-casthomepage
+play-services-cast-frameworkhomepage
+play-services-clearcuthomepage
+play-services-cloud-messaginghomepage
+play-services-fidohomepage
+play-services-flagshomepage
+play-services-gcmhomepage
+play-services-iidhomepage
+play-services-instantappshomepage
+play-services-locationhomepage
+play-services-phenotypehomepage
+play-services-places-placereporthomepage
+play-services-statshomepage
+play-services-taskshomepage
+play-services-visionhomepage
+play-services-vision-commonhomepage
+PLY (Python Lex-Yacc)homepage
+Polymerhomepage
+pprofhomepage
+pressurecookerhomepage
+Private Join and Compute subsethomepage
+protobufhomepage
+protobufhomepage
+Protocol Buffershomepage
+Protocol Buffershomepage
+Protocol Buffers - Google's data interchange formathomepage
+Protocol Buffers [Lite]homepage
+PSM (Private Set Membership) client sidehomepage
+pthreadpoolhomepage
+Puffin deterministic deflate recompressorhomepage
+Puppeteerhomepage
+pyjson5homepage
+pylinthomepage
+pywebsocket3homepage
+QUICHEhomepage
+Quick Color Management Systemhomepage
+rastermillhomepage
+RE2homepage
+re2 - an efficient, principled regular expression libraryhomepage
+reactivestreamshomepage
+Recurrent neural network for audio noise reductionhomepage
+ReLinkerhomepage
+Remote Callbackhomepage
+rjsminhomepage
+rxandroidhomepage
+rxandroid2homepage
+rxjava2homepage
+safeparcelhomepage
+SafeParcelable libraryhomepage
+Saved Statehomepage
+SavedState Kotlin Extensionshomepage
+Secure Messagehomepage
+settingslibhomepage
+settingslibhomepage
+Setupdesignhomepage
+setupdesignhomepage
+Simple Homomorphic Encryption Library with Latticeshomepage
+simplejsonhomepage
+Skiahomepage
+Slice buildershomepage
+Slice viewshomepage
+Small subset of OpenJDK librarieshomepage
+SMHasherhomepage
+Snappy: A fast compressor/decompressorhomepage
+Speech Dispatcherhomepage
+SPIR-V Headershomepage
+SPIR-V Toolshomepage
+SPIRV-Crosshomepage
+sqlitehomepage
+Strongtalkhomepage
+Sudden Motion Sensor libraryhomepage
+Swift toolchainhomepage
+SwiftShaderhomepage
+TCMallochomepage
+tcmallochomepage
+TensorFlow Litehomepage
+TensorFlow Lite Supporthomepage
+TensorFlow Texthomepage
+test_fontshomepage
+Text Fragments Polyfillhomepage
+Text Layout Builderhomepage
+text_layout_builderhomepage
+The Chromium Projecthomepage
+The Diff Match and Patch libraries offer robust algorithms to perform the operations required for synchronizing plain text.homepage
+The Incremental Distributed Point Functions libraryhomepage
+The ruy matrix multiplication libraryhomepage
+The USB ID Repositoryhomepage
+Tinkhomepage
+tinkhomepage
+transport-apihomepage
+turbinehomepage
+tzhomepage
+tz databasehomepage
+UKey2homepage
+Unicode Common Locale Data Repositoryhomepage
+UnRAR source for decompressing .RAR and other files.homepage
+URI Template Parserhomepage
+URL Pattern Libraryhomepage
+url_parsehomepage
+UTFhomepage
+utfhomepage
+utf8homepage
+utf8-rangehomepage
+utf8_rangehomepage
+v4l-utilshomepage
+V8 fork of fdlibmhomepage
+V8 JavaScript Enginehomepage
+valgrindhomepage
+VersionedParcelablehomepage
+VersionedParcelable and friendshomepage
+Vulkan API headershomepage
+Vulkan Depshomepage
+Vulkan Loader Componentshomepage
+VulkanMemoryAllocatorhomepage
+Wasmparserhomepage
+waylandhomepage
+wayland-protocolshomepage
+Web Animations JShomepage
+WebKithomepage
+WebM container parser and writer.homepage
+WebP image encoder/decoderhomepage
+WebRTChomepage
+WebView Support Libraryhomepage
+Weston - reference Wayland compositorhomepage
+WindowManager Java Supporthomepage
+Windows Template Library (WTL)homepage
+woff2homepage
+Wuffs (Wrangling Untrusted File Formats Safely)homepage
+x11protohomepage
+XDG Shared Mime Infohomepage
+xdg-mimehomepage
+xdg-user-dirshomepage
+xdg-utilshomepage
+XNNPACKhomepage
+XSurfacehomepage
+xxHashhomepage
+XZ Utilshomepage
+Yogahomepage
+yogahomepage
+zlibhomepage
+zlibhomepage
+<!doctype html>
+<html dir="ltr" lang="vi">
+<head>
+<meta charset="utf-8">
+<title>ThĂ nh pháº§n</title>
+<link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
+<style>/* Copyright 2013 The Chromium Authors
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
+
+body {
+  margin: 10px;
+  min-width: 47em;
+}
+
+a {
+  color: blue;
+  font-size: 103%;
+}
+
+#header {
+  background: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCIgZmlsbD0iIzYyNjI2MiI+PHBhdGggZD0iTTAgMGg0OHY0OEgweiIgZmlsbD0ibm9uZSIvPjxwYXRoIGQ9Ik00MSAyMmgtM3YtOGMwLTIuMjEtMS43OS00LTQtNGgtOFY3YzAtMi43Ni0yLjI0LTUtNS01cy01IDIuMjQtNSA1djNIOGMtMi4yMSAwLTMuOTggMS43OS0zLjk4IDRsLS4wMSA3LjZIN2MyLjk4IDAgNS40IDIuNDIgNS40IDUuNFM5Ljk4IDMyLjQgNyAzMi40SDQuMDFMNCA0MGMwIDIuMjEgMS43OSA0IDQgNGg3LjZ2LTNjMC0yLjk4IDIuNDItNS40IDUuNC01LjQgMi45OCAwIDUuNCAyLjQyIDUuNCA1LjR2M0gzNGMyLjIxIDAgNC0xLjc5IDQtNHYtOGgzYzIuNzYgMCA1LTIuMjQgNS01cy0yLjI0LTUtNS01eiIvPjwvc3ZnPg==)
+      left center / 48px no-repeat;
+  box-sizing: border-box;
+  margin-bottom: 1.05em;
+  overflow: hidden;
+  padding-inline-start: 0;
+  position: relative;
+}
+
+html[dir=rtl] #header {
+  background-position-x: right;
+}
+
+#header h1 {
+  line-height: 48px;
+  padding-inline-start: 51px;
+}
+
+h1 {
+  font-size: 156%;
+  font-weight: bold;
+  margin: 0;
+  padding: 0;
+}
+
+#disabled-container {
+  font-size: 120%;
+  padding-bottom: 1.5em;
+}
+
+#disabled-header {
+  color: red;
+  font-weight: bold;
+}
+
+.content {
+  margin-top: 5px;
+}
+
+.section-header {
+  background: rgb(235, 239, 249);
+  border-top: 1px solid rgb(181, 199, 222);
+  font-size: 99%;
+  padding-bottom: 2px;
+  padding-inline-start: 5px;
+  padding-top: 3px;
+  width: 100%;
+}
+
+.section-header > table tr td:first-child {
+  width: 100%;
+}
+
+.section-header > table tr {
+  vertical-align: center;
+}
+
+.section-header > table {
+  width: 100%;
+  border-collapse:collapse
+}
+
+.section-header-title {
+  font-weight: bold;
+}
+
+#top {
+  padding-inline-end: 5px;
+}
+
+.show-in-tmi-mode {
+  overflow: hidden;
+}
+
+body.hide-tmi-mode-initial .show-in-tmi-mode {
+  height: 0 !important;
+  opacity: 0;
+}
+
+body.hide-tmi-mode .show-in-tmi-mode {
+  height: 0 !important;
+  opacity: 0;
+  transition: all 100ms ease-out;
+}
+
+body.show-tmi-mode-initial .show-in-tmi-mode {
+  opacity: 1;
+}
+
+body.show-tmi-mode .show-in-tmi-mode {
+  opacity: 1;
+  transition: all 100ms ease-in;
+}
+
+.tmi-mode-image {
+  margin-top: 2px;
+  padding-inline-end: 5px;
+  padding-inline-start: 5px;
+}
+
+.tmi-mode-link {
+  margin-inline-end: 3px;
+  white-space: nowrap;
+}
+
+.tmi-mode-link a {
+  font-size: 97%;
+}
+
+.tmi-mode {
+  background: rgb(244, 246, 252);
+  border-bottom: 1px solid rgb(237, 239, 245);
+  font-size: 89%;
+  padding-bottom: 0.8em;
+  padding-inline-start: 10px;
+  padding-top: 0.8em;
+  width: 100%;
+}
+
+.component-disabled {
+  background-color: #f0f0f0;
+  color: #a0a0a0;
+}
+
+.component > tr > td {
+  padding-bottom: 4px;
+  padding-top: 5px;
+  vertical-align: top;
+}
+
+.component > table {
+  width: 100%;
+  border-collapse:collapse
+}
+
+.plugin-file {
+  padding-bottom: 5px;
+  padding-top: 5px;
+}
+
+.component {
+  border-bottom: 1px solid #cdcdcd;
+}
+
+.critical {
+  color: red;
+}
+
+/* Indent the text related to each plug-in. */
+.component-text {
+  padding-inline-start: 5px;
+}
+
+.component-name {
+  font-weight: bold;
+}
+
+.no-components {
+  font-size: 1.2em;
+  margin: 6em 0 0;
+  text-align: center;
+}
+
+/* Use tables for layout, so eliminate extra spacing. */
+.plugin-details table {
+  -webkit-border-horizontal-spacing: 0;
+  -webkit-border-vertical-spacing: 0;
+}
+
+.plugin-details {
+  padding-inline-start: 1em;
+}
+
+/* Separate the inital line, Description, Location, and MIME Types lines. */
+.plugin-details > div {
+  padding-top: 0.1em
+}
+
+/* Align rows of tables along the top. */
+.plugin-details tr {
+  vertical-align: top;
+}
+
+/* Separate columns by 1em for the most part. */
+.plugin-details td+td {
+  padding-inline-start: 1em;
+}
+
+/* Make the MIME Types tables smaller. */
+.plugin-details .mime-types {
+  font-size: 95%;
+}
+
+/* Separate the header from the contents in each MIME Types table. */
+.plugin-details .mime-types .header td {
+  border-bottom: 1px solid black;
+  padding-bottom: 0.1em;
+}
+
+/* Separate the columns for tables used for horizontal listings only a bit. */
+.hlisting td+td {
+  padding-inline-start: 0.4em;
+}
+
+/* Match the indentation of .plugin-text. */
+.component-actions {
+  margin-bottom: 0.2em;
+  margin-top: 0.2em;
+  padding-inline-start: 5px;
+}
+
+.always-allow {
+  margin-inline-start: 30px;
+}
+
+button {
+  font-size: 104%;
+}
+
+button[disabled] {
+  color: #999;
+}
+</style>
+
+
+</head>
+<body>
+<div id="body-container" style="visibility:hidden">
+
+  
+
+  <div id="header"><h1>ThĂ nh pháº§n</h1></div>
+  <div id="component-placeholder"></div>
+  <div id="component-template" hidden>
+
+    <div id="container">
+    <div id="top">
+
+      <div class="section-header">
+        <span class="section-header-title">ThĂ nh pháº§n</span>
+        <span class="section-header-title"
+              jsdisplay="components.length > 0">(<span
+              jscontent="components.length"></span>)</span>
+      </div>
+
+    </div>
+    </div>
+
+    <div class="content">
+      <div class="component-name no-components"
+           jsdisplay="components.length === 0">
+        <div>KhĂ´ng cĂ³ thĂ nh pháº§n nĂ o Ä‘Æ°á»£c cĂ i Ä‘áº·t</div>
+      </div>
+
+      <div jsdisplay="components.length > 0">
+        <div class="component"
+             jsselect="components">
+          <div class='component-enabled'>
+            <div class="component-text">
+              <div>
+                <span class="component-name" dir="ltr"
+                    jscontent="name">
+                </span>
+                <span>
+                  - <span>PhiĂªn báº£n:</span>
+                    <span dir="ltr" jscontent="version"
+                        jsvalues=".id: 'version-' + id"></span>
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="component-text">
+            <span>Tráº¡ng thĂ¡i</span>
+            -
+            <span jscontent="status" jsvalues=".id: 'status-' + id">
+            <span>
+          </div>
+          <div class="component-actions">
+            <button class="button-check-update" guest-disabled
+                jsvalues=".id:id">
+              Kiá»ƒm tra báº£n cáº­p nháº­t
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="components.js"></script>
+<script src="chrome://resources/js/jstemplate_compiled.js"></script>
+</body>
+</html><!DOCTYPE HTML>
+<html lang="en">
+
+<!-- TODO(crbug.com/658814): Localize strings. -->
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bluetooth Internals</title>
+  <link rel="stylesheet" href="chrome://resources/css/chrome_shared.css">
+  <link rel="stylesheet" href="chrome://resources/css/spinner.css">
+  <link rel="stylesheet" href="bluetooth_internals.css">
+
+  <script type="module" src="main.js"></script>
+</head>
+
+<body>
+  <div id="page-container">
+    <header class="page-header">
+      <button id="menu-btn" class="custom-appearance"></button>
+      <h1 class="page-title"></h1>
+    </header>
+    <section id="adapter" class="flex" hidden>
+      <div class="header-extras">
+        <button id="adapter-refresh-btn">Refresh</button>
+      </div>
+    </section>
+    <section id="devices" hidden>
+      <div class="header-extras">
+        <button id="scan-btn">Start Scan</button>
+      </div>
+    </section>
+    <section id="debug" hidden>
+      <div class="header-extras" id="debug-container"></div>
+    </section>
+  </div>
+  <div id="snackbar-container"></div>
+  <aside id="sidebar">
+    <div class="overlay"></div>
+    <section class="sidebar-content">
+      <header>
+        <h1>Bluetooth Internals</h1>
+      </header>
+      <nav>
+        <ul role="tablist">
+          <li class="selected" data-page-name="adapter">
+            <button class="custom-appearance">Adapter</button>
+          </li>
+          <li data-page-name="devices">
+            <button class="custom-appearance">Devices</button>
+          </li>
+          <li data-page-name="debug" data-page-name="debug">
+            <button class="custom-appearance">Debug Logs</button>
+          </li>
+        </ul>
+      </nav>
+    </section>
+  </aside>
+</body>
+
+<template id="table-template">
+  <table>
+    <thead>
+      <tr>
+        <th data-field="nameForDisplay">Name</th>
+        <th data-field="address">Address</th>
+        <th data-field="rssi.value">Latest RSSI</th>
+        <th data-field="serviceUuids">Services</th>
+        <th data-field="manufacturerDataMap">Manufacturer Data</th>
+        <th data-field="isGattConnected">GATT Connection State</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    </tbody>
+  </table>
+</template>
+
+<template id="device-details-template">
+  <div class="device-details-page">
+    <div class="header-extras">
+      <button class="disconnect">Disconnect</button>
+      <button class="forget">Forget</button>
+    </div>
+    <h3>Status</h3>
+    <section class="device-details flex"></section>
+    <h3>Services</h3>
+    <section class="services"></section>
+  </div>
+</template>
+
+</html><!doctype html>
+<html lang="en">
+<!--
+Copyright 2013 The Chromium Authors
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
+-->
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Accessibility Internals</title>
+  <link rel="stylesheet" href="chrome://resources/css/chrome_shared.css">
+  <style>/*
+ * Copyright 2013 The Chromium Authors
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
+ */
+
+body {
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  margin: 10px 0 10px 20px;
+  padding-block-end: 65px;
+}
+
+img {
+  float: left;
+  height: 16px;
+  padding-inline-end: 5px;
+  width: 16px;
+}
+
+.row {
+  border-bottom: 1px solid rgb(128, 134, 139);
+  padding: 5px;
+}
+
+.url {
+  color: rgb(128, 134, 139);
+}
+
+p {
+  line-height: 1.5em;
+  margin-inline-end: 20px;
+}
+
+.columns {
+  display: flex;
+}
+
+.column {
+  flex-basis: 50%;
+}
+
+.checkbox-row {
+  align-items: center;
+  display: flex;
+}
+
+.checkbox-wrapper {
+  flex-grow: 0;
+  margin: 0 0 2px 0;
+  padding: 0;
+  width: 32px;
+}
+
+.secondary {
+  color: rgb(60, 64, 67);
+  margin: 0 20px 12px 32px;
+}
+
+.hidden {
+  display: none;
+}
+
+a {
+  margin-block-end: 10px;
+  margin-block-start: 10px;
+  margin-inline-start: 20px;
+}
+
+label {
+  flex-grow: 1;
+  margin: 0 0 2px 0;
+  padding: 0;
+}
+
+label.disabled {
+  color: rgb(128, 134, 139);
+}
+
+input[type='checkbox'] {
+  margin-inline-end: 6px;
+}
+
+/* For mobile phones we want to use a one column layout */
+@media only screen and (max-width: 768px) {
+  .column {
+    flex-basis: 100%;
+  }
+
+  .columns {
+    flex-direction: column;
+    flex-wrap: wrap;
+  }
+
+  body {
+    font-size: 15px;
+  }
+
+  pre div {
+    margin-bottom: .5em;
+  }
+
+  input[type='checkbox'] {
+    height: 16px;
+    width: 16px;
+  }
+}</style>
+  <script type="module" src="accessibility.js"></script>
+</head>
+<body>
+  <h1>Accessibility Internals</h1>
+  <p>
+    Use this page to inspect the internal representation of accessibility in
+    Chrome. You can see and modify the various accessibility modes Chrome has.
+    You can also view the accessibility tree for a specific page, or for the
+    Chrome app natively.
+  </p>
+
+  <div class="columns">
+    <div class="column">
+      <h2>Accessibility modes:</h2>
+      <p>
+        Check/uncheck accessibility modes to see how they change a page's
+        accessibility.
+      </p>
+      <div class="checkbox-row">
+        <label>
+          <span class="checkbox-wrapper">
+            <input type="checkbox" id="native"
+                   aria-describedby="native_secondary">
+          </span>
+          Native accessibility API support
+        </label>
+      </div>
+      <div id="native_secondary" class="secondary">
+        Allows Chrome to be controlled via native accessibility APIs
+        specific to this platform.
+      </div>
+
+      <div class="checkbox-row">
+        <label>
+          <span class="checkbox-wrapper">
+            <input type="checkbox" id="web"
+                   aria-describedby="web_secondary">
+          </span>
+          Web accessibility
+        </label>
+      </div>
+      <div id="web_secondary" class="secondary">
+        Accessibility support is enabled for web content.
+      </div>
+
+      <div class="checkbox-row">
+        <label>
+          <span class="checkbox-wrapper">
+            <input type="checkbox" id="text"
+                   aria-describedby="text_secondary">
+          </span>
+          Text metrics
+        </label>
+      </div>
+      <div id="text_secondary" class="secondary">
+        Enables support for querying line breaks and the bounding
+        box of arbitrary character ranges.
+      </div>
+
+      <div class="checkbox-row">
+        <label>
+          <span class="checkbox-wrapper">
+            <input type="checkbox" id="screenreader"
+                   aria-describedby="screenreader_secondary">
+          </span>
+          Screen reader support
+        </label>
+      </div>
+      <div id="screenreader_secondary" class="secondary">
+        Exposes accessibility APIs typically needed only by
+        screen readers.
+      </div>
+
+      <div class="checkbox-row">
+        <label>
+          <span class="checkbox-wrapper">
+            <input type="checkbox" id="html"
+                   aria-describedby="html_secondary">
+          </span>
+          HTML
+        </label>
+      </div>
+      <div id="html_secondary" class="secondary">
+        Exposes HTML tag names and attributes via accessibility APIs.
+      </div>
+
+    </div>
+    <div class="column">
+      <h2>Accessibility tree viewing options:</h2>
+      <div class="checkbox-row">
+        <label>
+          <span class="checkbox-wrapper">
+            <input type="checkbox" id="internal"
+                   aria-describedby="internal_secondary">
+          </span>
+          Internal
+        </label>
+      </div>
+      <div id="internal_secondary" class="secondary">
+        Show internal accessibility tree instead of native
+      </div>
+
+      <h3>Filters:</h3>
+      <p>
+        Use filters to match the attributes and attribute values you want
+        included in the output. Filters can contain simple wildcards (*) only,
+        they're not regular expressions. Attributes are separated by spaces.
+      </p>
+
+      <div>
+        <label for="filter-allow">
+          Allow:
+        </label>
+        <input id="filter-allow" aria-describedby="allow_secondary">
+      </div>
+      <div id="allow_secondary" class="secondary">
+        Include these attributes. Empty attributes are skipped.
+      </div>
+
+      <div>
+        <label for="filter-allow-empty">
+          Allow empty:
+        </label>
+        <input id="filter-allow-empty"
+               aria-describedby="allow-empty_secondary">
+      </div>
+      <div id="allow-empty_secondary" class="secondary">
+        Include these attributes, even if they are empty.
+      </div>
+
+      <div>
+        <label for="filter-deny">
+          Deny:
+        </label>
+        <input id="filter-deny" aria-describedby="deny_secondary">
+      </div>
+      <div id="deny_secondary" class="secondary">
+        Exclude these attributes.
+      </div>
+    </div>
+  </div>
+
+  <div class="columns">
+    <div class="column">
+      <h2>Command line options:</h2>
+      <p>
+        Accessibility features in Chrome are off by default and enabled
+        automatically on-demand. Changes to these modes only take effect
+        until the next time Chrome is restarted.
+      </p>
+      <p>
+        To force accessibility to be enabled at launch, run Chrome with this
+        flag:
+        <pre>--force-renderer-accessibility</pre>
+      </p>
+      <p>
+        To disable accessibility, run Chrome with this flag:
+        <pre>--disable-renderer-accessibility</pre>
+      </p>
+    </div>
+  </div>
+
+  <h2>Chrome Native UI:</h2>
+  <div id="browsers" class="list">
+    <label for="native-ui-delay">
+      Set a delay, in milliseconds, before getting the native accessibility
+      tree:
+    </label>
+    <div></div>
+    <input id="native-ui-delay" type="number" value="0"> ms
+  </div>
+
+  <h2>Pages:</h2>
+  <div id="pages" class="list"></div>
+
+  <h2 id="widgets-header">Top Level Windows:</h2>
+  <p id="widgets-not-supported" class="hidden">
+    Top Level Window support is not available on this platform.
+  </p>
+  <div id="widgets" class="list"></div>
+</body>
+</html><!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Invalidations</title>
+  <link rel="stylesheet" href="chrome://resources/css/text_defaults.css">
+  <link rel="stylesheet" href="about_invalidations.css">
+</head>
+<body>
+  <h1>Invalidations Debug Information</h1>
+  <div id="invalidations-info">
+    <div id="states" class="section">
+      <span class="lead">Invalidation service state:</span>
+      <span id="invalidations-state"></span>
+    </div>
+    <div>
+      <span class="lead">Registered InvalidationHandlers:</span>
+      <span id="registered-handlers"></span>
+    </div>
+    <div id="objectsid-table-div" class="section">
+      <span class="lead">Registered objectsIds for invalidations:</span>
+      <table id="objectsid-table-container">
+      <!-- 'objectsidtable' can't have dashes in the name
+            as jstemplate can't deal with them-->
+        <thead>
+          <tr class="header">
+            <th>Registrar</th>
+            <th>Source</th>
+            <th>Name</th>
+            <th>Total Count</th>
+            <th>Session Count</th>
+            <th>Version</th>
+            <th>Time</th>
+            <th>Last Payload</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr jsselect="objectsidtable" jsvalues="class:$this.type">
+            <td jscontent="registrar" width=5%></td>
+            <td jscontent="source" width=5%></td>
+            <td jscontent="name" width=20%></td>
+            <td jscontent="totalCount" width=5%></td>
+            <td jscontent="sessionCount" width=5%></td>
+            <td jscontent="version" width=10%></td>
+            <td jscontent="time" width=20%></td>
+            <td jscontent="payload" width=30%></td>
+         </tr>
+       </tbody>
+     </table>
+    </div>
+    <div class="section">
+      <span class="lead">Invalidations Log:</span>
+      <textarea
+        id="invalidations-log" rows="10" cols="120"readonly></textarea>
+    </div>
+    <div class="section">
+      <span class="lead">Detailed Internal Status:
+        <button id="request-detailed-status">Refresh</button>
+      </span>
+      <textarea id="internal-display" rows="10" cols="120" readonly></textarea>
+    </div>
+  </div>
+  <script type="module" src="about_invalidations.js"></script>
+</body>
+</html>
+name: CI-89²
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the "main" branch
+  push:
+    branches: [ "main⁴" ]
+  pull_request:
+    branches: [ "main⁴" ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v4
+
+      # Runs a single command using the runners shell
+      - name: Run a one-line script
+        run: echo Hello, world!
+
+      # Runs a set of commands using the runners shell
+      - name: Run a multi-line script
+        run: |
+          echo Add other actions to build,
+          echo test, and deploy your project.
